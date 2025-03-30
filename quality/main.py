@@ -13,6 +13,7 @@ from initialization import initialize_i2c, initialize_lidar, initialize_gps, ini
 from data_acquisition import lidar_thread_func, gps_thread_func, accel_thread_func
 from visualization import setup_visualization
 from utils import update_gps_map, create_default_map
+from analysis import RoadQualityAnalyzer  # Import the analyzer
 
 # Fix Wayland error
 os.environ["QT_QPA_PLATFORM"] = "xcb"  # Use X11 instead of Wayland
@@ -40,6 +41,10 @@ class SensorFusion:
         # Changed: Update structure to match display.py
         self.gps_data = {"timestamp": None, "lat": 0, "lon": 0, "alt": 0, "sats": 0, "lock": self.gps_data_lock}
         self.last_map_update = 0  # Added: Track last map update time
+        
+        # Initialize the road quality analyzer
+        self.analyzer = RoadQualityAnalyzer(self.config)
+        self.analysis_lock = threading.Lock()
         
         # Device handles
         self.lidar_device = None
@@ -138,6 +143,65 @@ class SensorFusion:
                 
         logger.info("Cleanup complete")
 
+    def analyze_data(self):
+        """Analyze sensor data and update metrics"""
+        try:
+            with self.accel_data_lock:
+                accel_data_copy = list(self.accel_data)
+                
+            with self.lidar_data_lock:
+                lidar_data_copy = list(self.lidar_data)
+                
+            with self.gps_data_lock:
+                gps_data_copy = self.gps_data.copy()
+                
+            with self.analysis_lock:
+                # Log lidar data status for debugging
+                if not lidar_data_copy:
+                    logger.warning("No LiDAR data available for analysis")
+                else:
+                    # Count points in center field of view (-10 to 10 degrees)
+                    center_points = sum(1 for p in lidar_data_copy if (
+                        p[0] >= 0 and p[0] <= 10) or (p[0] >= 350 and p[0] <= 360) or (
+                        p[0] >= -10 and p[0] <= 0))
+                    
+                    logger.debug(f"Analyzing {len(lidar_data_copy)} LiDAR points ({center_points} in center FOV)")
+                    
+                # Calculate road quality using LiDAR data instead of accelerometer
+                quality = self.analyzer.calculate_lidar_road_quality(lidar_data_copy)
+                
+                # Still detect road events using accelerometer as backup
+                events = self.analyzer.detect_road_events(accel_data_copy, gps_data_copy)
+                
+                # Analyze frequency spectrum
+                texture = self.analyzer.analyze_frequency_spectrum(accel_data_copy)
+                
+                # Log road quality info periodically
+                classification = self.analyzer.get_road_classification()
+                if events:
+                    logger.info(f"Events detected: {len(events)}")
+                
+                # Always log quality at regular intervals for monitoring
+                if hasattr(self, '_log_counter'):
+                    self._log_counter += 1
+                else:
+                    self._log_counter = 0
+                    
+                if self._log_counter % 10 == 0:  # Log every ~5 seconds at 0.5s interval
+                    logger.info(f"Road quality: {quality:.1f}/100 ({classification}), Texture: {texture:.1f}/100")
+        except Exception as e:
+            logger.error(f"Error in data analysis: {e}")
+            import traceback
+            logger.error(traceback.format_exc())  # Log the full traceback for debugging
+
+    def analysis_thread_func(self):
+        """Thread function for continuous data analysis"""
+        logger.info("Analysis thread started")
+        while not self.stop_event.is_set():
+            self.analyze_data()
+            time.sleep(0.5)  # Analysis interval
+        logger.info("Analysis thread stopped")
+
     def run(self):
         """Main function to run the application"""
         self.setup_signal_handler()
@@ -151,12 +215,22 @@ class SensorFusion:
         
         self.start_threads()
         
+        # Start the analysis thread
+        analysis_thread = threading.Thread(
+            target=self.analysis_thread_func,
+            daemon=True
+        )
+        analysis_thread.start()
+        self.threads.append(analysis_thread)
+        
         try:
             logger.info("Setting up visualization...")
             self.fig_lidar, self.fig_accel, self.lidar_ani, self.accel_ani = setup_visualization(
                 self.lidar_data, self.lidar_data_lock, 
                 self.accel_data, self.accel_data_lock, 
-                self.config
+                self.config,
+                self.analyzer,  # Pass the analyzer to visualization
+                self.analysis_lock
             )
             
             # Try to open the map in browser - Added this section

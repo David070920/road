@@ -1,0 +1,1 @@
+these are codes for a device that measures road quality. it runs on my raspberry pi 5 using a vertical lidar, an accelerometer and a gps. what improvements would you do. give me a list and i will select what i like.

@@ -38,13 +38,24 @@ def update_lidar_plot(num, line, lidar_data, lidar_data_lock, config):
         offsets = np.column_stack((angles, distances))
         line.set_offsets(offsets)
         
-        # Color by intensity/distance
-        intensity = np.array([0 + (50 - 0) * (d / config.LIDAR_DMAX) for d in distances])
+        # Color points based on distance from expected model
+        # First estimate the LiDAR height (distance at angle ≈ 0)
+        center_idx = np.argmin(np.abs(angles))
+        est_height = distances[center_idx]
+        
+        # Calculate expected distances based on cosine model
+        expected = est_height / np.cos(angles)
+        
+        # Calculate deviations as intensity
+        deviations = np.abs(distances - expected)
+        max_dev = max(20, np.max(deviations))  # At least 20mm scale for stability
+        intensity = deviations / max_dev * 50  # Scale to colormap range
+        
         line.set_array(intensity)
         
     return line,
 
-def update_accel_plot(frame, accel_line, accel_data, accel_data_lock, config):
+def update_accel_plot(frame, accel_line, accel_data, accel_data_lock, config, analyzer=None, analysis_lock=None):
     """Update function for accelerometer animation"""
     with accel_data_lock:
         if not accel_data:
@@ -56,10 +67,29 @@ def update_accel_plot(frame, accel_line, accel_data, accel_data_lock, config):
         
         # Adjust x-axis for proper scrolling effect
         accel_line.set_xdata(np.arange(len(data_array)))
+    
+    # Add road quality info if analyzer is available
+    if analyzer and analysis_lock:
+        with analysis_lock:
+            # Use LiDAR-based quality score instead of accelerometer-based
+            quality_score = analyzer.lidar_quality_score
+            road_class = analyzer.get_road_classification()
+            
+            # Update the title with quality information
+            ax = accel_line.axes
+            ax.set_title(f"Sensor Data | Road Quality (LiDAR): {quality_score:.1f}/100 ({road_class})")
+            
+            # Color the line based on quality
+            if quality_score >= 75:  # Good
+                accel_line.set_color('green')
+            elif quality_score >= 50:  # Fair
+                accel_line.set_color('orange')
+            else:  # Poor
+                accel_line.set_color('red')
         
     return accel_line,
 
-def setup_visualization(lidar_data, lidar_data_lock, accel_data, accel_data_lock, config):
+def setup_visualization(lidar_data, lidar_data_lock, accel_data, accel_data_lock, config, analyzer=None, analysis_lock=None):
     """Set up matplotlib figures and animations"""
     # Set the matplotlib backend properties to allow window management
     # This works across different backends
@@ -148,11 +178,25 @@ def setup_visualization(lidar_data, lidar_data_lock, accel_data, accel_data_lock
     
     ax_accel.set_xlim(0, config.MAX_DATA_POINTS - 1)
     ax_accel.set_ylim(-2, 2)
-    ax_accel.set_title(f"Accelerometer Data\n{user_info}")
+    
+    title = "Accelerometer Data"
+    if analyzer:
+        title += f" | Road Quality: {analyzer.current_quality_score:.1f}/100 ({analyzer.get_road_classification()})"
+    
+    ax_accel.set_title(f"{title}\n{user_info}")
     ax_accel.set_xlabel("Sample")
     ax_accel.set_ylabel("Acceleration (g)")
     ax_accel.grid(True)
     ax_accel.legend(loc='upper right')
+    
+    # Add a second y-axis for road quality score if analyzer is available
+    if analyzer:
+        ax_quality = ax_accel.twinx()
+        ax_quality.set_ylabel("Road Quality Score")
+        ax_quality.set_ylim(0, 100)
+        ax_quality.spines['right'].set_color('green')
+        ax_quality.tick_params(axis='y', colors='green')
+        ax_quality.yaxis.label.set_color('green')
     
     # Add user info text in the lower right corner
     fig_accel.text(0.99, 0.01, f"{user_info} | Current time: {current_time}", 
@@ -164,7 +208,7 @@ def setup_visualization(lidar_data, lidar_data_lock, accel_data, accel_data_lock
     accel_ani = animation.FuncAnimation(
         fig_accel, 
         update_accel_plot, 
-        fargs=(accel_line, accel_data, accel_data_lock, config),
+        fargs=(accel_line, accel_data, accel_data_lock, config, analyzer, analysis_lock),
         interval=config.UPDATE_INTERVAL, 
         blit=True,
         cache_frame_data=False

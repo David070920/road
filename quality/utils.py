@@ -46,7 +46,7 @@ def get_accel_data(i2c_bus, config):
         return accel_z / 16384.0  # Convert to g
     return None
 
-def update_gps_map(gps_data, config):
+def update_gps_map(gps_data, config, analyzer=None):
     """Update the GPS position on a Folium map and save as HTML"""
     try:
         with gps_data["lock"]:
@@ -64,6 +64,29 @@ def update_gps_map(gps_data, config):
         # Create a map centered at the GPS coordinates
         m = folium.Map(location=[lat, lon], zoom_start=config.MAP_ZOOM_START)
         
+        # Add road quality info if available
+        quality_info = ""
+        marker_color = "blue"
+        
+        if analyzer:
+            # Use LiDAR-based quality score instead of accelerometer-based
+            quality_score = analyzer.lidar_quality_score
+            road_class = analyzer.get_road_classification()
+            quality_info = f"""
+            <b>Road Quality (LiDAR)</b><br>
+            Score: {quality_score:.1f}/100<br>
+            Classification: {road_class}<br>
+            <hr>
+            """
+            
+            # Set marker color based on quality
+            if quality_score >= 75:
+                marker_color = "green"
+            elif quality_score >= 50:
+                marker_color = "orange"
+            else:
+                marker_color = "red"
+        
         # Add a marker for the current position
         popup_text = f"""
         <b>GPS Data</b><br>
@@ -72,6 +95,7 @@ def update_gps_map(gps_data, config):
         Altitude: {alt} m<br>
         Satellites: {sats}<br>
         Time: {timestamp}<br>
+        {quality_info}
         <hr>
         User: {config.USER_LOGIN}<br>
         Session: {config.SYSTEM_START_TIME}
@@ -79,17 +103,39 @@ def update_gps_map(gps_data, config):
         
         folium.Marker(
             [lat, lon], 
-            popup=folium.Popup(popup_text, max_width=300)
+            popup=folium.Popup(popup_text, max_width=300),
+            icon=folium.Icon(color=marker_color)
         ).add_to(m)
         
         # Add a circle to show accuracy (just for visualization)
         folium.Circle(
             location=[lat, lon],
             radius=10,  # 10 meters radius
-            color='blue',
+            color=marker_color,
             fill=True,
             fill_opacity=0.2
         ).add_to(m)
+        
+        # Add road events if analyzer is available
+        if analyzer and hasattr(analyzer, 'events'):
+            for event in analyzer.get_recent_events(count=10):
+                if 'lat' in event and 'lon' in event and event['lat'] != 0:
+                    # Set icon and color based on event type and severity
+                    icon_color = "red" if event['severity'] > 70 else "orange"
+                    icon_type = "warning" if "Pothole" in event['type'] else "info-sign"
+                    
+                    event_html = f"""
+                    <b>{event['type']} Detected</b><br>
+                    Severity: {event['severity']}/100<br>
+                    Magnitude: {event['magnitude']:.3f}g<br>
+                    Time: {event['timestamp']}<br>
+                    """
+                    
+                    folium.Marker(
+                        [event['lat'], event['lon']], 
+                        popup=folium.Popup(event_html, max_width=200),
+                        icon=folium.Icon(color=icon_color, icon=icon_type)
+                    ).add_to(m)
         
         # Save the map to an HTML file
         m.save(config.MAP_HTML_PATH)
