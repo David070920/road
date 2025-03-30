@@ -9,6 +9,14 @@ import os
 
 logger = logging.getLogger("WebServer")
 
+# Import ngrok helper
+try:
+    from .ngrok_helper import NgrokTunnel, check_ngrok_installed, get_ngrok_version
+    NGROK_AVAILABLE = True
+except ImportError:
+    logger.warning("Ngrok helper module not found. Remote access will not be available.")
+    NGROK_AVAILABLE = False
+
 class RoadQualityWebServer:
     def __init__(self, sensor_fusion, config, host='0.0.0.0', port=8080):
         """Initialize the web server with access to sensor data"""
@@ -24,12 +32,37 @@ class RoadQualityWebServer:
         self.thread = None
         self.connected_clients = 0
         
+        # Ngrok tunnel
+        self.ngrok_tunnel = None
+        
         # Register routes
         self.register_routes()
         # Register socket events
         self.register_socket_events()
         
         logger.info(f"Web server initialized on http://{host}:{port}/")
+        
+        # Initialize ngrok if enabled
+        if getattr(self.config, 'ENABLE_NGROK', False) and NGROK_AVAILABLE:
+            self.setup_ngrok()
+    
+    def setup_ngrok(self):
+        """Set up ngrok tunnel for remote access"""
+        try:
+            if not check_ngrok_installed():
+                logger.warning("Ngrok not available. To enable remote access, install pyngrok: pip install pyngrok")
+                return
+                
+            logger.info(f"Setting up ngrok tunnel (version: {get_ngrok_version()})...")
+            
+            # Create tunnel
+            self.ngrok_tunnel = NgrokTunnel(
+                port=self.port,
+                auth_token=getattr(self.config, 'NGROK_AUTH_TOKEN', None),
+                region=getattr(self.config, 'NGROK_REGION', 'us')
+            )
+        except Exception as e:
+            logger.error(f"Error setting up ngrok: {e}")
     
     def register_routes(self):
         """Register HTTP routes"""
@@ -54,6 +87,22 @@ class RoadQualityWebServer:
                     'events': self.sensor_fusion.analyzer.get_recent_events(count=10)
                 }
             return flask.jsonify(data)
+        
+        @self.app.route('/remote_access')
+        def remote_access():
+            """Display ngrok tunnel information"""
+            if self.ngrok_tunnel and self.ngrok_tunnel.public_url:
+                tunnel_url = self.ngrok_tunnel.public_url
+                status = "active"
+            else:
+                tunnel_url = "Not available"
+                status = "inactive"
+                
+            return flask.jsonify({
+                'status': status,
+                'tunnel_url': tunnel_url,
+                'local_url': f"http://{self.host}:{self.port}/",
+            })
     
     def register_socket_events(self):
         """Register WebSocket event handlers"""
@@ -132,6 +181,30 @@ class RoadQualityWebServer:
         self.thread.daemon = True
         self.thread.start()
         
+        # Start ngrok tunnel if available - Do this BEFORE starting the Flask server
+        if self.ngrok_tunnel:
+            # Try multiple times to establish the tunnel
+            for attempt in range(3):
+                logger.info(f"Starting ngrok tunnel (attempt {attempt+1}/3)...")
+                if self.ngrok_tunnel.start():
+                    logger.info(f"✅ Remote access URL: {self.ngrok_tunnel.public_url}")
+                    # Print QR code URL for easy mobile access
+                    qr_url = f"https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl={self.ngrok_tunnel.public_url}"
+                    logger.info(f"📱 Scan QR code to access: {qr_url}")
+                    
+                    # Add this to make it very visible in the console
+                    print("\n" + "=" * 80)
+                    print(f"🌐 REMOTE ACCESS URL: {self.ngrok_tunnel.public_url}")
+                    print(f"📱 SCAN QR CODE: {qr_url}")
+                    print("=" * 80 + "\n")
+                    
+                    break
+                else:
+                    logger.warning(f"Failed to start ngrok tunnel on attempt {attempt+1}")
+                    time.sleep(2)  # Wait before retry
+            else:
+                logger.error("Failed to start ngrok tunnel after multiple attempts")
+        
         # Start web server
         logger.info(f"Starting web server on http://{self.host}:{self.port}/")
         try:
@@ -145,6 +218,11 @@ class RoadQualityWebServer:
         """Stop the web server"""
         logger.info("Stopping web server")
         self.running = False
+        
+        # Stop ngrok tunnel
+        if self.ngrok_tunnel:
+            self.ngrok_tunnel.stop()
+            
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=1.0)
         # Shutdown flask in a better way (depends on flask version)

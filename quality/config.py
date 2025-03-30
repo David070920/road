@@ -43,3 +43,8 @@ class Config:
     WEB_SERVER_HOST = '0.0.0.0'  # Listen on all interfaces
     WEB_SERVER_PORT = 8080
     WEB_UPDATE_INTERVAL = 200  # WebSocket update interval in ms (reduced for more responsive updates)
+    
+    # Ngrok remote access settings
+    ENABLE_NGROK = True  # Enable ngrok remote access
+    NGROK_AUTH_TOKEN = "1kHCNihdSF75RXdZOaII8jNdwLr_2F83BK8kuB8vBP4otk8Y7"  # Your ngrok auth token (None for free usage)
+    NGROK_REGION = "eu"  # Ngrok region: us, eu, ap, au, sa, jp, in

@@ -56,6 +56,9 @@ def main():
     all_installed &= check_module("flask_socketio", "flask-socketio")
     all_installed &= check_module("folium")
     
+    # Remote access
+    all_installed &= check_module("pyngrok", "pyngrok")
+    
     # Test if hardware is accessible
     print("\nChecking hardware accessibility:")
     

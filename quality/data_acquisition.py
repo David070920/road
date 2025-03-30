@@ -2,7 +2,7 @@ import time
 import threading
 import pynmea2
 import logging
-from utils import get_accel_data  # Import the get_accel_data function
+from quality.io.i2c_utils import get_accel_data  # Fix import path
 
 logger = logging.getLogger("SensorFusion")
 
