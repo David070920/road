@@ -7,7 +7,6 @@ import time
 import webbrowser
 import matplotlib.pyplot as plt
 from collections import deque  # Import deque
-import subprocess
 
 from config import Config
 from initialization import initialize_i2c, initialize_lidar, initialize_gps, initialize_icm20948
@@ -22,10 +21,6 @@ os.environ["QT_QPA_PLATFORM"] = "xcb"  # Use X11 instead of Wayland
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("SensorFusion")
-
-# Add new constants for auto-restart functionality
-RESTART_EXIT_CODE = 42
-LIDAR_CONNECT_TIMEOUT = 7  # Reduce timeout to 7 seconds before restarting
 
 class SensorFusion:
     def __init__(self):
@@ -68,10 +63,6 @@ class SensorFusion:
         
         # Log the map file location
         logger.info(f"GPS map will be saved to: {self.config.MAP_HTML_PATH}")
-        
-        # Add a flag to track if LiDAR initialization is complete
-        self.lidar_init_complete = False
-        self.lidar_init_start_time = 0
 
     def initialize_devices(self):
         """Initialize all the devices"""
@@ -80,24 +71,9 @@ class SensorFusion:
             logger.error("Failed to initialize I2C. Exiting.")
             return False
         
-        # Start watchdog thread to monitor LiDAR initialization
-        self.lidar_init_complete = False
-        self.lidar_init_start_time = time.time()
-        watchdog_thread = threading.Thread(target=self._lidar_init_watchdog, daemon=True)
-        watchdog_thread.start()
-        
-        # Log that we're starting LiDAR initialization
-        logger.info("Starting LiDAR initialization (this may take a moment)...")
-        
-        try:
-            self.lidar_device = initialize_lidar(self.config)
-        finally:
-            # Mark initialization as complete regardless of success or failure
-            self.lidar_init_complete = True
-            logger.info("LiDAR initialization flag set to complete")
-        
+        self.lidar_device = initialize_lidar(self.config)
         if not self.lidar_device:
-            logger.error("Failed to initialize LiDAR. LiDAR is required, exiting.")
+            logger.error("Failed to initialize LiDAR. Exiting.")
             return False
             
         self.gps_serial_port = initialize_gps(self.config)
@@ -109,109 +85,19 @@ class SensorFusion:
         
         return True
 
-    def _lidar_init_watchdog(self):
-        """Watchdog thread that monitors LiDAR initialization and forces restart if stuck"""
-        logger.info("LiDAR initialization watchdog started")
-        restart_time = self.lidar_init_start_time + LIDAR_CONNECT_TIMEOUT
-        
-        while not self.lidar_init_complete:
-            current_time = time.time()
-            # Check if we've exceeded the timeout
-            if current_time > restart_time:
-                logger.error(f"LiDAR initialization timed out after {LIDAR_CONNECT_TIMEOUT} seconds. Forcing restart...")
-                # Sleep a brief moment to allow log message to be written
-                time.sleep(0.5)
-                # Force restart the application
-                self._force_restart()
-                # If we're still here, something went wrong with the restart
-                # Just exit with a special code
-                logger.error("Restart failed, exiting with special code")
-                os._exit(RESTART_EXIT_CODE)  # Use os._exit to force immediate termination
-            
-            # Check more frequently - every 0.2 seconds
-            time.sleep(0.2)
-            
-        logger.info("LiDAR initialization watchdog completed normally")
-    
-    def _force_restart(self):
-        """Force the application to restart using multiple methods"""
-        logger.info("⚠️ RESTARTING APPLICATION DUE TO LIDAR TIMEOUT ⚠️")
-        print("\n\n⚠️ RESTARTING APPLICATION DUE TO LIDAR TIMEOUT ⚠️\n\n")
-        
-        # Method 1: Create a restart script and execute it
-        try:
-            restart_script = """#!/bin/bash
-            # Wait for original process to exit
-            sleep 1
-            # Start the application again
-            python {}
-            """.format(os.path.abspath(sys.argv[0]))
-            
-            script_path = "/tmp/restart_road_quality.sh"
-            with open(script_path, 'w') as f:
-                f.write(restart_script)
-            
-            os.chmod(script_path, 0o755)
-            
-            # Execute the script in background
-            subprocess.Popen(["bash", script_path], start_new_session=True)
-            
-            logger.info("Restart script created and executed")
-        except Exception as e:
-            logger.error(f"Error creating restart script: {e}")
-        
-        # Method 2: Try the execv approach as backup
-        try:
-            # Try to perform minimal cleanup
-            if hasattr(self, 'lidar_device') and self.lidar_device:
-                try:
-                    self.lidar_device.stopmotor()
-                except:
-                    pass
-            
-            if hasattr(self, 'gps_serial_port') and self.gps_serial_port:
-                try:
-                    self.gps_serial_port.close()
-                except:
-                    pass
-                    
-            if hasattr(self, 'i2c_bus') and self.i2c_bus:
-                try:
-                    self.i2c_bus.close()
-                except:
-                    pass
-            
-            logger.info("Attempting restart via execv...")
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-        except Exception as e:
-            logger.error(f"Execv restart failed: {e}")
-        
-        # Method 3: Simple exit with restart code
-        logger.info("Exiting with restart code for external handler...")
-        sys.exit(RESTART_EXIT_CODE)
-
     def start_threads(self):
         """Start data acquisition threads"""
-        threads = [
-            threading.Thread(target=lidar_thread_func, 
-                            args=(self.lidar_device, self.lidar_data_lock, self.lidar_data, 
-                                 self.stop_event, self.config), 
-                            daemon=True),
+        # Changed: Pass the last_map_update as an object attribute
+        self.threads = [
+            threading.Thread(target=lidar_thread_func, args=(self.lidar_device, self.lidar_data_lock, self.lidar_data, self.stop_event, self.config), daemon=True),
             threading.Thread(target=gps_thread_func, 
                             args=(self.gps_serial_port, self.gps_data_lock, self.gps_data, 
-                                 self.stop_event, self.config, update_gps_map, self), 
-                            daemon=True),
-            threading.Thread(target=accel_thread_func, 
-                            args=(self.i2c_bus, self.accel_data_lock, self.accel_data, 
-                                 self.stop_event, self.config), 
-                            daemon=True)
+                                self.stop_event, self.config, update_gps_map, self), daemon=True),
+            threading.Thread(target=accel_thread_func, args=(self.i2c_bus, self.accel_data_lock, self.accel_data, self.stop_event, self.config), daemon=True)
         ]
         
-        # Start all threads
-        for thread in threads:
+        for thread in self.threads:
             thread.start()
-            
-        self.threads = threads
 
     def setup_signal_handler(self):
         """Set up signal handler for graceful shutdown"""
@@ -325,24 +211,11 @@ class SensorFusion:
             return
         
         # Create default map before starting threads
-        create_default_map(self.config)
+        create_default_map(self.config)  # Added: Create default map
         
-        # Start the threads
         self.start_threads()
         
-        # Add a delay to allow threads to initialize and collect initial data
-        logger.info("Waiting for sensors to initialize and collect initial data...")
-        wait_time = 2  # seconds
-        for i in range(wait_time * 2):
-            if self.stop_event.is_set():
-                break
-            time.sleep(0.5)
-            # Log progress dots
-            if i % 2 == 0:
-                print(".", end="", flush=True)
-        print("")  # New line after dots
-        
-        # Start the analysis thread only after initial data collection
+        # Start the analysis thread
         analysis_thread = threading.Thread(
             target=self.analysis_thread_func,
             daemon=True
@@ -351,56 +224,25 @@ class SensorFusion:
         self.threads.append(analysis_thread)
         
         try:
-            # Check if we have any data before proceeding to visualization
-            have_lidar_data = False
-            have_accel_data = False
-            timeout = 5  # Maximum seconds to wait for data
-            logger.info("Checking for sensor data...")
-            
-            for _ in range(timeout * 2):
-                with self.lidar_data_lock:
-                    have_lidar_data = len(self.lidar_data) > 0
-                    
-                with self.accel_data_lock:
-                    have_accel_data = len(self.accel_data) > 0
-                    
-                if have_lidar_data and have_accel_data:
-                    logger.info("Initial sensor data received, proceeding to visualization")
-                    break
-                    
-                if self.stop_event.is_set():
-                    break
-                    
-                time.sleep(0.5)
-                
-            if not (have_lidar_data and have_accel_data):
-                logger.warning("Timeout waiting for initial sensor data, but proceeding anyway")
-            
             logger.info("Setting up visualization...")
             self.fig_lidar, self.fig_accel, self.lidar_ani, self.accel_ani = setup_visualization(
                 self.lidar_data, self.lidar_data_lock, 
                 self.accel_data, self.accel_data_lock, 
                 self.config,
-                self.analyzer,
+                self.analyzer,  # Pass the analyzer to visualization
                 self.analysis_lock
             )
             
-            # Move map opening to a separate thread to prevent blocking
-            def open_map_browser():
-                try:
-                    time.sleep(1)  # Give a moment to ensure file is ready
-                    map_url = 'file://' + os.path.abspath(self.config.MAP_HTML_PATH)
-                    logger.info(f"Opening map at: {map_url}")
-                    if webbrowser.open(map_url):
-                        logger.info("Map opened in browser")
-                    else:
-                        logger.warning("Failed to open browser, but map file was created")
-                except Exception as e:
-                    logger.error(f"Error opening map in browser: {e}")
-            
-            # Launch browser in separate thread
-            browser_thread = threading.Thread(target=open_map_browser, daemon=True)
-            browser_thread.start()
+            # Try to open the map in browser - Added this section
+            try:
+                map_url = 'file://' + os.path.abspath(self.config.MAP_HTML_PATH)
+                logger.info(f"Opening map at: {map_url}")
+                if webbrowser.open(map_url):
+                    logger.info("Map opened in browser")
+                else:
+                    logger.warning("Failed to open browser, but map file was created")
+            except Exception as e:
+                logger.error(f"Error opening map in browser: {e}")
             
             # Use plt.ioff() to avoid keeping windows always on top
             plt.ioff()
@@ -413,75 +255,9 @@ class SensorFusion:
                 
         except Exception as e:
             logger.error(f"Error in visualization: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
         finally:
             self.cleanup()
 
 if __name__ == '__main__':
-    # Add a script-level watchdog to restart for any hanging issues
-    # This will handle the case where the watchdog inside SensorFusion doesn't work
-    restart_script_path = None
-    
-    try:
-        # Create a watchdog script that will restart the application if it hangs
-        watchdog_script = """#!/bin/bash
-        # Give the main program time to start
-        sleep 20
-        # Check if the process is still running
-        if ps -p {} >/dev/null; then
-            # Process is still running, restart it
-            echo "Process still running, killing and restarting..."
-            kill -9 {}
-            sleep 1
-            python {}
-        fi
-        """.format(os.getpid(), os.getpid(), os.path.abspath(sys.argv[0]))
-        
-        restart_script_path = "/tmp/watchdog_road_quality_{}.sh".format(os.getpid())
-        with open(restart_script_path, 'w') as f:
-            f.write(watchdog_script)
-        
-        os.chmod(restart_script_path, 0o755)
-        
-        # Execute the watchdog script in background
-        subprocess.Popen(["bash", restart_script_path], start_new_session=True)
-        
-        # Normal execution
-        sensor_fusion = SensorFusion()
-        sensor_fusion.run()
-    except SystemExit as e:
-        # Handle the restart exit code
-        if e.code == RESTART_EXIT_CODE:
-            logger.info("Restarting application due to exit code...")
-            # Small delay before restart
-            time.sleep(1)
-            # Try a more reliable restart method
-            try:
-                # First try to start a new process
-                subprocess.Popen([sys.executable] + sys.argv, start_new_session=True)
-                logger.info("Started new process, exiting current process")
-                sys.exit(0)
-            except:
-                # Fall back to execv
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-        else:
-            # Clean up the watchdog script before exiting
-            if restart_script_path and os.path.exists(restart_script_path):
-                try:
-                    os.remove(restart_script_path)
-                except:
-                    pass
-            sys.exit(e.code)
-    except Exception as e:
-        logger.error(f"Unhandled exception in main: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        sys.exit(1)
-    finally:
-        # Clean up the watchdog script
-        if restart_script_path and os.path.exists(restart_script_path):
-            try:
-                os.remove(restart_script_path)
-            except:
-                pass
+    sensor_fusion = SensorFusion()
+    sensor_fusion.run()
