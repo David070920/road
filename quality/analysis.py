@@ -354,8 +354,8 @@ class RoadQualityAnalyzer:
         
         # Boost scores for very good roads
         if quality_score > 90:
-            # If it's already above 90, reduce the gap to 100
-            quality_score = 90 + (quality_score - 90) * 2
+            # If it's already above 90, reduce the gap to 100, but cap at 100
+            quality_score = min(100, 90 + (quality_score - 90) * 2)
         
         # Detect events for significant deviations
         self._detect_lidar_events(adjusted_residuals, angles_deg, distances, quality_score)
@@ -364,7 +364,7 @@ class RoadQualityAnalyzer:
         self.lidar_segment_scores.append(quality_score)
         weights = np.linspace(0.5, 1.0, len(self.lidar_segment_scores))
         weighted_scores = np.array(self.lidar_segment_scores) * weights
-        self.lidar_quality_score = np.sum(weighted_scores) / np.sum(weights)
+        self.lidar_quality_score = min(100, np.sum(weighted_scores) / np.sum(weights))
         
         # Log detailed quality metrics for debugging
         logger.debug(f"Road quality: r²={r_squared:.3f}, std={residual_std:.2f}mm, max_dev={max_deviation:.2f}mm")
