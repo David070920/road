@@ -20,7 +20,7 @@ def filter_lidar_angles(scan_data, config):
     return filtered_data
 
 def lidar_thread_func(lidar_device, lidar_data_lock, lidar_data, stop_event, config):
-    """Thread function for LiDAR data acquisition"""
+    """Thread function for LiDAR data acquisition with improved synchronization"""
     logger.info("LiDAR thread started")
     data_log_interval = 0
     empty_scan_count = 0
@@ -51,9 +51,14 @@ def lidar_thread_func(lidar_device, lidar_data_lock, lidar_data, stop_event, con
                 data_log_interval = 0
             
             # Update shared data with lock - Replace data instead of appending
+            # Use the condition to notify waiting threads that new data is available
             with lidar_data_lock:
                 lidar_data.clear()  # Clear old data
                 lidar_data.extend(filtered_data)  # Add new data
+                
+                # If a condition variable exists, notify waiting threads
+                if hasattr(lidar_data_lock, 'notify_all'):
+                    lidar_data_lock.notify_all()
                     
         except Exception as e:
             logger.error(f"Error in LiDAR thread: {e}")

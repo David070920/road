@@ -84,14 +84,19 @@ class SensorFusion:
         # Log user and session information
         logger.info(f"Starting SensorFusion - User: {self.config.USER_LOGIN}, Session start: {self.config.SYSTEM_START_TIME}")
         
-        # Data structures with thread safety
-        self.lidar_data_lock = threading.Lock()
+        # Data structures with improved thread safety
+        # Use RLock instead of Lock for cases where the same thread might need to acquire the lock multiple times
+        self.lidar_data_lock = threading.RLock()
         self.lidar_data = deque(maxlen=self.config.MAX_DATA_POINTS)
+        # Add condition for signaling when new lidar data is available
+        self.lidar_data_condition = threading.Condition(self.lidar_data_lock)
         
-        self.accel_data_lock = threading.Lock()
+        self.accel_data_lock = threading.RLock()
         self.accel_data = deque(maxlen=self.config.MAX_DATA_POINTS)
+        # Add condition for signaling when new accelerometer data is available
+        self.accel_data_condition = threading.Condition(self.accel_data_lock)
         
-        self.gps_data_lock = threading.Lock()
+        self.gps_data_lock = threading.RLock()
         self.gps_data = {"timestamp": None, "lat": 0, "lon": 0, "alt": 0, "sats": 0, "lock": self.gps_data_lock}
         self.last_map_update = 0
         
@@ -102,11 +107,15 @@ class SensorFusion:
             'gps': None,
             'timestamp': 0
         }
-        self.snapshot_lock = threading.Lock()
+        self.snapshot_lock = threading.RLock()
         
-        # Initialize the road quality analyzer
+        # Use RLock for the analyzer to allow recursive acquisition
         self.analyzer = RoadQualityAnalyzer(self.config)
-        self.analysis_lock = threading.Lock()
+        self.analysis_lock = threading.RLock()
+        
+        # Add data ready flag and condition for efficient waiting
+        self.data_ready = False
+        self.data_ready_condition = threading.Condition(self.snapshot_lock)
         
         # Device handles
         self.lidar_device = None
@@ -220,23 +229,20 @@ class SensorFusion:
         logger.info("Cleanup complete")
 
     def analyze_data(self):
-        """Analyze sensor data and update metrics"""
+        """Analyze sensor data and update metrics with improved synchronization"""
         try:
-            # Create a single snapshot of all data with minimal copying
+            # Create a single snapshot of all data with minimal copying and better synchronization
             current_time = time.time()
+            data_updated = False
             
             # Only update the snapshot every 0.1 seconds to reduce locking overhead
             with self.snapshot_lock:
                 if current_time - self.data_snapshot['timestamp'] > 0.1:
-                    with self.lidar_data_lock:
-                        # Reference the deque directly when possible, or make a shallow copy if needed
+                    # Use a more efficient approach: acquire all locks at once to avoid deadlocks
+                    # Python's with statement allows multiple context managers
+                    with self.lidar_data_lock, self.accel_data_lock, self.gps_data_lock:
                         self.data_snapshot['lidar'] = list(self.lidar_data)
-                    
-                    with self.accel_data_lock:
                         self.data_snapshot['accel'] = list(self.accel_data)
-                        
-                    with self.gps_data_lock:
-                        # Only copy the necessary fields, not the whole dictionary
                         self.data_snapshot['gps'] = {
                             'lat': self.gps_data['lat'],
                             'lon': self.gps_data['lon'],
@@ -244,14 +250,29 @@ class SensorFusion:
                             'sats': self.gps_data['sats'],
                             'timestamp': self.gps_data['timestamp']
                         }
-                    
+                        
                     self.data_snapshot['timestamp'] = current_time
+                    data_updated = True
+                    
+                    # Signal that new data is ready
+                    with self.data_ready_condition:
+                        self.data_ready = True
+                        self.data_ready_condition.notify_all()
             
-            # Use the snapshot for analysis
+            # Skip analysis if no new data is available
+            if not data_updated and hasattr(self, '_last_analysis_time') and \
+               current_time - self._last_analysis_time < 0.2:
+                time.sleep(0.05)  # Short sleep to reduce CPU usage
+                return
+                
+            self._last_analysis_time = current_time
+            
+            # Use the snapshot for analysis - no need for locks here since we have a copy
             lidar_data = self.data_snapshot['lidar']
             accel_data = self.data_snapshot['accel']
             gps_data = self.data_snapshot['gps']
             
+            # Only lock during the critical section of update
             with self.analysis_lock:
                 # Log lidar data status for debugging - optimized to avoid string formatting
                 if not lidar_data:
@@ -267,14 +288,11 @@ class SensorFusion:
                     # Only calculate and format debug message if debug logging is enabled
                     log_debug_if_enabled(logger, 
                         lambda: f"Analyzing {len(lidar_data)} LiDAR points ({center_points} in center FOV)")
-                    
-                # Calculate road quality using LiDAR data instead of accelerometer
+                
+                # Calculate quality metrics - these don't modify shared state so could be done outside the lock
+                # but we keep them here for code clarity
                 quality = self.analyzer.calculate_lidar_road_quality(lidar_data)
-                
-                # Still detect road events using accelerometer as backup
                 events = self.analyzer.detect_road_events(accel_data, gps_data)
-                
-                # Analyze frequency spectrum
                 texture = self.analyzer.analyze_frequency_spectrum(accel_data)
                 
                 # Log road quality info periodically with more efficient counter logic
@@ -297,11 +315,24 @@ class SensorFusion:
             logger.error(traceback.format_exc())  # Log the full traceback for debugging
 
     def analysis_thread_func(self):
-        """Thread function for continuous data analysis"""
+        """Thread function for continuous data analysis with improved wait logic"""
         logger.info("Analysis thread started")
+        
         while not self.stop_event.is_set():
-            self.analyze_data()
-            time.sleep(0.5)  # Analysis interval
+            try:
+                # Wait for data to be ready instead of polling at fixed intervals
+                # This is more efficient and responsive
+                with self.data_ready_condition:
+                    # Wait for data_ready or timeout after 0.5 seconds
+                    self.data_ready_condition.wait(0.5)
+                    # Reset flag to wait for next update
+                    self.data_ready = False
+                
+                self.analyze_data()
+            except Exception as e:
+                logger.error(f"Error in analysis thread: {e}")
+                time.sleep(0.5)  # Prevent tight loop in case of recurring errors
+                
         logger.info("Analysis thread stopped")
 
     def run(self):
