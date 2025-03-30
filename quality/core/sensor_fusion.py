@@ -9,13 +9,31 @@ import matplotlib.pyplot as plt
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
-from ..config import Config
-from ..hardware import initialize_i2c, initialize_lidar, initialize_gps, initialize_icm20948
-from ..acquisition import lidar_thread_func, gps_thread_func, accel_thread_func
-from ..visualization import setup_visualization
-from ..io.gps_utils import update_gps_map, create_default_map
-from ..analysis import RoadQualityAnalyzer
-from .context_managers import lidar_device_context, serial_port_context, i2c_bus_context
+# Handle both direct execution and module import
+if __name__ == "__main__":
+    # Add the project root to the Python path
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+    sys.path.insert(0, project_root)
+    
+    # Use absolute imports when run directly
+    from quality.config import Config
+    from quality.hardware import initialize_i2c, initialize_lidar, initialize_gps, initialize_icm20948
+    from quality.acquisition import lidar_thread_func, gps_thread_func, accel_thread_func
+    from quality.visualization import setup_visualization
+    from quality.io.gps_utils import update_gps_map, create_default_map
+    from quality.analysis import RoadQualityAnalyzer
+    from quality.core.context_managers import lidar_device_context, serial_port_context, i2c_bus_context
+    from quality.web.server import RoadQualityWebServer
+else:
+    # Use relative imports when imported as a module
+    from ..config import Config
+    from ..hardware import initialize_i2c, initialize_lidar, initialize_gps, initialize_icm20948
+    from ..acquisition import lidar_thread_func, gps_thread_func, accel_thread_func
+    from ..visualization import setup_visualization
+    from ..io.gps_utils import update_gps_map, create_default_map
+    from ..analysis import RoadQualityAnalyzer
+    from .context_managers import lidar_device_context, serial_port_context, i2c_bus_context
+    from ..web.server import RoadQualityWebServer
 
 # Fix Wayland error
 os.environ["QT_QPA_PLATFORM"] = "xcb"  # Use X11 instead of Wayland
@@ -60,6 +78,9 @@ class SensorFusion:
         self.analyzer = RoadQualityAnalyzer(self.config)
         self.analysis_lock = threading.RLock()
         
+        # Add GPS quality history for heatmap
+        self.analyzer.gps_quality_history = []
+        
         # Add data ready flag and condition for efficient waiting
         self.data_ready = False
         self.data_ready_condition = threading.Condition(self.snapshot_lock)
@@ -80,6 +101,9 @@ class SensorFusion:
         self.fig_accel = None
         self.lidar_ani = None
         self.accel_ani = None
+        
+        # Add web server
+        self.web_server = None
         
         # Log the map file location
         logger.info(f"GPS map will be saved to: {self.config.MAP_HTML_PATH}")
@@ -162,6 +186,14 @@ class SensorFusion:
         if self.thread_pool:
             self.thread_pool.shutdown(wait=True, cancel_futures=True)
             logger.info("Thread pool shut down")
+        
+        # Stop web server
+        if self.web_server:
+            try:
+                self.web_server.stop()
+                logger.info("Web server stopped")
+            except Exception as e:
+                logger.error(f"Error stopping web server: {e}")
                 
         # Use context managers for device cleanup
         with lidar_device_context(self.lidar_device):
@@ -256,6 +288,37 @@ class SensorFusion:
                 self._log_counter += 1
                 if self._log_counter % 10 == 0:
                     logger.info(f"Road quality: {quality:.1f}/100 ({classification}), Texture: {texture:.1f}/100")
+            
+            # Add to GPS quality history for heatmap visualization
+            try:
+                if gps_data['lat'] != 0 and gps_data['lon'] != 0:
+                    with self.analysis_lock:
+                        quality_score = self.analyzer.lidar_quality_score
+                        # Only add points if we've moved (to avoid clustering)
+                        add_point = True
+                        if self.analyzer.gps_quality_history:
+                            last_point = self.analyzer.gps_quality_history[-1]
+                            # Calculate rough distance using simple formula
+                            dist = (
+                                (last_point['lat'] - gps_data['lat'])**2 + 
+                                (last_point['lon'] - gps_data['lon'])**2
+                            ) ** 0.5
+                            # Only add point if we've moved at least a small distance
+                            add_point = dist > 0.00005  # ~5 meters
+                        
+                        if add_point:
+                            self.analyzer.gps_quality_history.append({
+                                'lat': gps_data['lat'],
+                                'lon': gps_data['lon'],
+                                'quality': quality_score,
+                                'timestamp': time.time()
+                            })
+                            # Limit history size
+                            if len(self.analyzer.gps_quality_history) > 1000:
+                                # Keep more recent points
+                                self.analyzer.gps_quality_history = self.analyzer.gps_quality_history[-1000:]
+            except Exception as e:
+                logger.error(f"Error updating GPS quality history: {e}")
         
         except Exception as e:
             logger.error(f"Error in data analysis: {e}")
@@ -316,6 +379,17 @@ class SensorFusion:
                     self.analysis_lock
                 )
                 
+                # Initialize and start the web server
+                self.web_server = RoadQualityWebServer(
+                    self, 
+                    self.config, 
+                    host=self.config.WEB_SERVER_HOST, 
+                    port=self.config.WEB_SERVER_PORT
+                )
+                web_thread = threading.Thread(target=self.web_server.start, daemon=True)
+                web_thread.start()
+                logger.info(f"Web interface available at http://{self.config.WEB_SERVER_HOST}:{self.config.WEB_SERVER_PORT}")
+                
                 # Try to open the map in browser
                 try:
                     map_url = 'file://' + os.path.abspath(self.config.MAP_HTML_PATH)
@@ -337,6 +411,19 @@ class SensorFusion:
                     plt.pause(0.1)  # Update plots while allowing other operations
                     
             except Exception as e:
-                logger.error(f"Error in visualization: {e}")
+                logger.error(f"Error in visualization: {e}", exc_info=True)
             finally:
                 self.cleanup()
+
+# Add a main block to make the file runnable directly
+if __name__ == "__main__":
+    print("Starting Road Quality Measurement System directly...")
+    sensor_fusion = SensorFusion()
+    try:
+        sensor_fusion.run()
+    except KeyboardInterrupt:
+        print("Interrupted by user. Shutting down...")
+    except Exception as e:
+        import traceback
+        print(f"Error: {e}")
+        traceback.print_exc()

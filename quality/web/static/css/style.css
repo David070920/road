@@ -1,0 +1,258 @@
+:root {
+    --primary-color: #3498db;
+    --secondary-color: #2ecc71;
+    --danger-color: #e74c3c;
+    --warning-color: #f39c12;
+    --dark-color: #2c3e50;
+    --light-color: #ecf0f1;
+    --text-color: #333;
+    --card-bg: white;
+    --border-radius: 8px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--light-color);
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+header {
+    background-color: var(--dark-color);
+    color: white;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.user-info {
+    font-size: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    text-align: right;
+}
+
+.dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.card {
+    background-color: var(--card-bg);
+    border-radius: var(--border-radius);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    transition: transform 0.3s ease;
+    height: 300px;
+    display: flex;
+    flex-direction: column;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+.card h2 {
+    margin-bottom: 15px;
+    color: var(--dark-color);
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 8px;
+    flex-shrink: 0;
+}
+
+/* Quality score card */
+.quality-score {
+    text-align: center;
+}
+
+.quality-value {
+    font-size: 3rem;
+    font-weight: bold;
+    margin: 10px 0;
+}
+
+.quality-label {
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+}
+
+/* Events card */
+#events-list {
+    flex: 1;
+    overflow-y: auto;
+    margin-top: 10px;
+}
+
+.event-item {
+    padding: 10px;
+    border-left: 4px solid var(--primary-color);
+    margin-bottom: 10px;
+    background-color: rgba(52, 152, 219, 0.1);
+}
+
+.event-pothole {
+    border-left-color: var(--danger-color);
+    background-color: rgba(231, 76, 60, 0.1);
+}
+
+.event-bump {
+    border-left-color: var(--warning-color);
+    background-color: rgba(243, 156, 18, 0.1);
+}
+
+.event-title {
+    font-weight: bold;
+}
+
+.event-details {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.no-events {
+    color: #888;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
+/* GPS card */
+#gps-coordinates {
+    font-size: 1.1rem;
+    margin: 20px 0;
+}
+
+.view-map {
+    margin-top: auto;
+}
+
+.view-map a {
+    display: inline-block;
+    background-color: var(--primary-color);
+    color: white;
+    padding: 8px 15px;
+    border-radius: var(--border-radius);
+    text-decoration: none;
+    transition: background-color 0.2s;
+}
+
+.view-map a:hover {
+    background-color: #2980b9;
+}
+
+/* Acceleration chart */
+.acceleration {
+    position: relative;
+}
+
+.acceleration canvas {
+    width: 100% !important;
+    flex: 1;
+}
+
+/* Fix for the quality gauge size */
+.quality-score canvas {
+    margin-top: auto;
+    max-height: 180px;
+}
+
+/* Connection status styles */
+.connection-status {
+    position: absolute;
+    top: 10px;
+    right: 20px;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: white;
+    opacity: 1;
+    transition: opacity 1s ease-out;
+    z-index: 100;
+}
+
+.connection-status.connecting {
+    background-color: #3498db;
+}
+
+.connection-status.connected {
+    background-color: #2ecc71;
+}
+
+.connection-status.disconnected {
+    background-color: #e74c3c;
+}
+
+.connection-status.error {
+    background-color: #e74c3c;
+}
+
+.connection-status.stale {
+    background-color: #f39c12;
+}
+
+.connection-status.fade-out {
+    opacity: 0.2;
+}
+
+.connection-status:hover {
+    opacity: 1;
+}
+
+/* Animation for new events */
+@keyframes highlightNew {
+    0% { background-color: rgba(46, 204, 113, 0.3); }
+    100% { background-color: transparent; }
+}
+
+.event-item.new-event {
+    animation: highlightNew 2s ease-out;
+}
+
+footer {
+    text-align: center;
+    padding: 20px;
+    background-color: var(--dark-color);
+    color: white;
+    margin-top: 20px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 800px) {
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+    
+    header {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .user-info {
+        margin-top: 10px;
+        text-align: center;
+    }
+    
+    .card {
+        height: auto;
+        min-height: 300px;
+    }
+    
+    .connection-status {
+        top: auto;
+        bottom: 10px;
+        right: 10px;
+        font-size: 0.7rem;
+    }
+}

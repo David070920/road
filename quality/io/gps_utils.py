@@ -2,6 +2,8 @@ import folium
 import os
 import logging
 import webbrowser
+from folium.plugins import HeatMap, PolyLineOffset
+from collections import defaultdict
 
 logger = logging.getLogger("SensorFusion")
 
@@ -45,6 +47,74 @@ def update_gps_map(gps_data, config, analyzer=None):
                 marker_color = "orange"
             else:
                 marker_color = "red"
+                
+            # Add road quality trail (heatmap) if history exists
+            if hasattr(analyzer, 'gps_quality_history') and analyzer.gps_quality_history:
+                # Extract points for heatmap - format is [[lat, lon, intensity], ...]
+                heatmap_data = []
+                for point in analyzer.gps_quality_history:
+                    # Convert quality score to intensity (reverse scale: lower quality = higher intensity)
+                    intensity = (100 - point['quality']) / 30  # Scale to reasonable heatmap intensity
+                    heatmap_data.append([point['lat'], point['lon'], intensity])
+                
+                # Add heatmap layer if we have enough points
+                if len(heatmap_data) >= 5:
+                    HeatMap(
+                        heatmap_data,
+                        radius=15,
+                        max_zoom=18,
+                        blur=10,
+                        gradient={0.4: 'green', 0.65: 'yellow', 0.9: 'orange', 1: 'red'}
+                    ).add_to(m)
+                    
+                # Add quality-colored path
+                # Group points by quality category for coloring
+                quality_segments = defaultdict(list)
+                last_quality_cat = None
+                current_segment = []
+                
+                for point in analyzer.gps_quality_history:
+                    # Determine quality category
+                    if point['quality'] >= 75:
+                        quality_cat = "good"
+                        color = "green"
+                    elif point['quality'] >= 50:
+                        quality_cat = "fair"
+                        color = "orange"
+                    else:
+                        quality_cat = "poor"
+                        color = "red"
+                    
+                    # If category changed, start a new segment
+                    if quality_cat != last_quality_cat and current_segment:
+                        quality_segments[last_quality_cat].extend(current_segment)
+                        current_segment = []
+                    
+                    current_segment.append([point['lat'], point['lon']])
+                    last_quality_cat = quality_cat
+                
+                # Add the last segment
+                if current_segment and last_quality_cat:
+                    quality_segments[last_quality_cat].extend(current_segment)
+                
+                # Add each quality segment with appropriate color
+                for quality_cat, points in quality_segments.items():
+                    if len(points) >= 2:  # Need at least 2 points for a line
+                        if quality_cat == "good":
+                            color = "green"
+                        elif quality_cat == "fair":
+                            color = "orange"
+                        else:
+                            color = "poor"
+                            color = "red"
+                        
+                        folium.PolyLine(
+                            points,
+                            color=color,
+                            weight=5,
+                            opacity=0.8,
+                            tooltip=f"{quality_cat.title()} Road Quality"
+                        ).add_to(m)
         
         # Add a marker for the current position
         popup_text = f"""
@@ -95,6 +165,30 @@ def update_gps_map(gps_data, config, analyzer=None):
                         popup=folium.Popup(event_html, max_width=200),
                         icon=folium.Icon(color=icon_color, icon=icon_type)
                     ).add_to(m)
+        
+        # Add legend for quality colors
+        legend_html = '''
+        <div style="position: fixed; 
+                    bottom: 50px; right: 50px; width: 150px; height: 120px; 
+                    border:2px solid grey; z-index:9999; font-size:14px;
+                    background-color:white; padding: 8px;
+                    border-radius: 5px;">
+          <p><b>Road Quality</b></p>
+          <div style="margin-bottom:4px;">
+            <div style="width:12px; height:12px; display:inline-block; background-color:green; margin-right:5px;"></div>
+            Good (75-100)
+          </div>
+          <div style="margin-bottom:4px;">
+            <div style="width:12px; height:12px; display:inline-block; background-color:orange; margin-right:5px;"></div>
+            Fair (50-75)
+          </div>
+          <div>
+            <div style="width:12px; height:12px; display:inline-block; background-color:red; margin-right:5px;"></div>
+            Poor (0-50)
+          </div>
+        </div>
+        '''
+        m.get_root().html.add_child(folium.Element(legend_html))
         
         # Save the map to an HTML file
         m.save(config.MAP_HTML_PATH)

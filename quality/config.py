@@ -38,3 +38,8 @@ class Config:
     # Folium map settings
     MAP_HTML_PATH = os.path.join(str(Path.home()), "gps_position.html")
     MAP_ZOOM_START = 15
+    
+    # Web server settings
+    WEB_SERVER_HOST = '0.0.0.0'  # Listen on all interfaces
+    WEB_SERVER_PORT = 8080
+    WEB_UPDATE_INTERVAL = 200  # WebSocket update interval in ms (reduced for more responsive updates)
