@@ -1,10 +1,9 @@
 import numpy as np
 import logging
 from scipy.signal import find_peaks
-from scipy import stats
 from collections import deque
 from datetime import datetime
-import time  # Add for performance measurements
+import time
 
 logger = logging.getLogger("SensorFusion")
 

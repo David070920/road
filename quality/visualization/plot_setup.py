@@ -3,150 +3,11 @@ import matplotlib.animation as animation
 import numpy as np
 import logging
 from datetime import datetime
-import time  # For measuring update performance
+
+from .lidar_plots import update_lidar_plot
+from .accel_plots import update_accel_plot
 
 logger = logging.getLogger("SensorFusion")
-
-# Add performance tracking variables
-_last_update_time = 0
-_update_interval_multiplier = 1.0
-_frame_skip_counter = 0
-
-def update_lidar_plot(num, line, lidar_data, lidar_data_lock, config):
-    """Update function for LiDAR animation with optimized performance"""
-    global _last_update_time, _update_interval_multiplier, _frame_skip_counter
-    
-    # Skip frames if we're updating too frequently to reduce CPU load
-    _frame_skip_counter += 1
-    if _frame_skip_counter < config.MAX_FRAME_SKIP:
-        return line,
-    else:
-        _frame_skip_counter = 0
-    
-    # Measure update time to adaptively adjust frequency
-    start_time = time.time()
-    
-    # Check if there's new data to process before acquiring lock
-    # This minimizes lock contention
-    has_data = False
-    with lidar_data_lock:
-        has_data = len(lidar_data) > 0
-        
-        if not has_data:
-            return line,
-    
-        # Process the data for visualization only if we have data
-        # Separate the lock acquisition to minimize time held
-    with lidar_data_lock:
-        # Make a shallow copy to release lock faster
-        lidar_snapshot = list(lidar_data)
-            
-    # Process the data without holding the lock
-    # Convert angles to the format expected by the polar plot
-    polar_data = []
-    for point in lidar_snapshot:
-        angle_deg = point[0]
-        distance = point[1]
-        
-        # Convert 315-360 degrees to -45-0 degrees for the polar plot
-        if angle_deg >= 315 and angle_deg <= 360:
-            angle_deg = angle_deg - 360
-        
-        # Only include angles in our desired range
-        if -45 <= angle_deg <= 45:
-            polar_data.append((np.radians(angle_deg), distance))
-    
-    if not polar_data:
-        return line,
-        
-    # Convert data to numpy arrays for faster processing
-    angles = np.array([point[0] for point in polar_data])
-    distances = np.array([point[1] for point in polar_data])
-    
-    # Update the plot
-    offsets = np.column_stack((angles, distances))
-    line.set_offsets(offsets)
-    
-    # Color points based on distance from expected model - optimized calculation
-    # First estimate the LiDAR height (distance at angle ≈ 0)
-    if len(angles) > 0:
-        center_idx = np.argmin(np.abs(angles))
-        est_height = distances[center_idx]
-        
-        # Calculate expected distances based on cosine model
-        cos_values = np.cos(angles)
-        cos_values = np.maximum(cos_values, 0.1)  # Prevent division by zero
-        expected = est_height / cos_values
-        
-        # Calculate deviations as intensity - simplified calculation
-        deviations = np.abs(distances - expected)
-        max_dev = max(20, np.max(deviations))  # At least 20mm scale for stability
-        intensity = deviations / max_dev * 50  # Scale to colormap range
-        
-        line.set_array(intensity)
-    
-    # Measure and adjust update rate dynamically
-    update_time = time.time() - start_time
-    
-    # If update takes too long, increase the interval multiplier
-    if update_time > 0.05:  # 50ms threshold
-        _update_interval_multiplier = min(3.0, _update_interval_multiplier * 1.1)
-    else:
-        # Gradually decrease multiplier if updates are fast
-        _update_interval_multiplier = max(1.0, _update_interval_multiplier * 0.95)
-    
-    _last_update_time = time.time()
-    return line,
-
-def update_accel_plot(frame, accel_line, accel_data, accel_data_lock, config, analyzer=None, analysis_lock=None):
-    """Update function for accelerometer animation with optimized performance"""
-    global _frame_skip_counter
-    
-    # Skip frames to reduce CPU usage
-    _frame_skip_counter += 1
-    if _frame_skip_counter < config.MAX_FRAME_SKIP:
-        return accel_line,
-    else:
-        _frame_skip_counter = 0
-    
-    # Check if there's data before acquiring the lock
-    with accel_data_lock:
-        has_data = len(accel_data) > 0
-        if not has_data:
-            return accel_line,
-    
-        # Make a copy of the data while holding the lock
-        data_array = np.array(accel_data)
-    
-    # Update the plot with current data - moved outside lock
-    accel_line.set_ydata(data_array)
-    
-    # Adjust x-axis for proper scrolling effect - optimized to use length directly
-    x_data = np.arange(len(data_array))
-    accel_line.set_xdata(x_data)
-    
-    # Add road quality info if analyzer is available - using minimal locking
-    if analyzer and analysis_lock:
-        # Only acquire analysis lock if we need to update title or colors
-        if frame % 5 == 0:  # Update text less frequently (every 5 frames)
-            with analysis_lock:
-                # Use LiDAR-based quality score instead of accelerometer-based
-                quality_score = analyzer.lidar_quality_score
-                road_class = analyzer.get_road_classification()
-                
-                # Update the title with quality information
-                ax = accel_line.axes
-                ax.set_title(f"Sensor Data | Road Quality (LiDAR): {quality_score:.1f}/100 ({road_class})")
-                
-                # Color the line based on quality - only change if different
-                if quality_score >= 75 and accel_line.get_color() != 'green':  # Good
-                    accel_line.set_color('green')
-                elif 50 <= quality_score < 75 and accel_line.get_color() != 'orange':  # Fair
-                    accel_line.set_color('orange')
-                elif quality_score < 50 and accel_line.get_color() != 'red':  # Poor
-                    accel_line.set_color('red')
-        
-    return accel_line,
 
 def setup_visualization(lidar_data, lidar_data_lock, accel_data, accel_data_lock, config, analyzer=None, analysis_lock=None):
     """Set up matplotlib figures and animations with optimized performance"""
@@ -208,7 +69,7 @@ def setup_visualization(lidar_data, lidar_data_lock, accel_data, accel_data_lock
         fig_lidar, 
         update_lidar_plot,
         fargs=(line, lidar_data, lidar_data_lock, config), 
-        interval=config.LIDAR_UPDATE_INTERVAL,  # Use config value
+        interval=config.LIDAR_UPDATE_INTERVAL,
         blit=True,
         cache_frame_data=False
     )
@@ -228,7 +89,7 @@ def setup_visualization(lidar_data, lidar_data_lock, accel_data, accel_data_lock
                     fig_accel.canvas.manager.window.windowFlags() & ~0x00000020
                 )
             elif 'tk' in backend:
-                fig_accel.canvas.manager.window.wm_attributes ("-topmost", 0)
+                fig_accel.canvas.manager.window.wm_attributes("-topmost", 0)
         
         logger.info(f"Configured accelerometer visualization window")
     except Exception as e:
@@ -276,7 +137,7 @@ def setup_visualization(lidar_data, lidar_data_lock, accel_data, accel_data_lock
         fig_accel, 
         update_accel_plot, 
         fargs=(accel_line, accel_data, accel_data_lock, config, analyzer, analysis_lock),
-        interval=config.ACCEL_UPDATE_INTERVAL,  # Use config value
+        interval=config.ACCEL_UPDATE_INTERVAL,
         blit=True,
         cache_frame_data=False
     )

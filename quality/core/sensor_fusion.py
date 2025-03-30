@@ -8,15 +8,14 @@ import webbrowser
 import matplotlib.pyplot as plt
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
-from functools import partial
 
-from config import Config
-from initialization import initialize_i2c, initialize_lidar, initialize_gps, initialize_icm20948
-from data_acquisition import lidar_thread_func, gps_thread_func, accel_thread_func
-from visualization import setup_visualization
-from utils import update_gps_map, create_default_map
-from analysis import RoadQualityAnalyzer
+from ..config import Config
+from ..hardware import initialize_i2c, initialize_lidar, initialize_gps, initialize_icm20948
+from ..acquisition import lidar_thread_func, gps_thread_func, accel_thread_func
+from ..visualization import setup_visualization
+from ..io.gps_utils import update_gps_map, create_default_map
+from ..analysis import RoadQualityAnalyzer
+from .context_managers import lidar_device_context, serial_port_context, i2c_bus_context
 
 # Fix Wayland error
 os.environ["QT_QPA_PLATFORM"] = "xcb"  # Use X11 instead of Wayland
@@ -24,58 +23,6 @@ os.environ["QT_QPA_PLATFORM"] = "xcb"  # Use X11 instead of Wayland
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("SensorFusion")
-
-# Create efficient logging wrappers
-def log_debug_if_enabled(logger, msg_func):
-    """Only format and log debug messages if debug is enabled"""
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(msg_func())
-
-def log_info_periodic(logger, msg_func, counter, interval=10):
-    """Log info messages at periodic intervals to reduce overhead"""
-    if counter % interval == 0:
-        logger.info(msg_func())
-    return counter + 1
-
-# Add context managers for device resources
-@contextmanager
-def lidar_device_context(device):
-    """Context manager for LiDAR device to ensure proper cleanup"""
-    try:
-        yield device
-    finally:
-        if device:
-            try:
-                device.stopmotor()
-                logger.info("LiDAR motor stopped")
-            except Exception as e:
-                logger.error(f"Error stopping LiDAR motor: {e}")
-
-@contextmanager
-def serial_port_context(port):
-    """Context manager for serial port to ensure proper closure"""
-    try:
-        yield port
-    finally:
-        if port:
-            try:
-                port.close()
-                logger.info("Serial port closed")
-            except Exception as e:
-                logger.error(f"Error closing serial port: {e}")
-
-@contextmanager
-def i2c_bus_context(bus):
-    """Context manager for I2C bus to ensure proper closure"""
-    try:
-        yield bus
-    finally:
-        if bus:
-            try:
-                bus.close()
-                logger.info("I2C bus closed")
-            except Exception as e:
-                logger.error(f"Error closing I2C bus: {e}")
 
 class SensorFusion:
     def __init__(self):
@@ -286,8 +233,8 @@ class SensorFusion:
                         p[0] >= -10 and p[0] <= 0))
                     
                     # Only calculate and format debug message if debug logging is enabled
-                    log_debug_if_enabled(logger, 
-                        lambda: f"Analyzing {len(lidar_data)} LiDAR points ({center_points} in center FOV)")
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"Analyzing {len(lidar_data)} LiDAR points ({center_points} in center FOV)")
                 
                 # Calculate quality metrics - these don't modify shared state so could be done outside the lock
                 # but we keep them here for code clarity
@@ -303,12 +250,13 @@ class SensorFusion:
                         self._events_reported = len(events)
                 
                 # Use the periodic logging function for regular updates
-                self._log_counter = log_info_periodic(
-                    logger,
-                    lambda: f"Road quality: {quality:.1f}/100 ({classification}), Texture: {texture:.1f}/100",
-                    getattr(self, '_log_counter', 0),
-                    interval=10  # Log every ~5 seconds at 0.5s interval
-                )
+                if not hasattr(self, '_log_counter'):
+                    self._log_counter = 0
+                    
+                self._log_counter += 1
+                if self._log_counter % 10 == 0:
+                    logger.info(f"Road quality: {quality:.1f}/100 ({classification}), Texture: {texture:.1f}/100")
+        
         except Exception as e:
             logger.error(f"Error in data analysis: {e}")
             import traceback
@@ -392,7 +340,3 @@ class SensorFusion:
                 logger.error(f"Error in visualization: {e}")
             finally:
                 self.cleanup()
-
-if __name__ == '__main__':
-    sensor_fusion = SensorFusion()
-    sensor_fusion.run()

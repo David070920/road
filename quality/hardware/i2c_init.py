@@ -1,8 +1,6 @@
-import serial
 import smbus2
 import time
 import logging
-from fastestrplidar import FastestRplidar
 
 logger = logging.getLogger("SensorFusion")
 
@@ -14,32 +12,6 @@ def initialize_i2c():
         return i2c_bus
     except Exception as e:
         logger.error(f"Failed to initialize I2C: {e}")
-        return None
-
-def initialize_lidar(config):
-    """Initialize the LiDAR sensor"""
-    try:
-        lidar_device = FastestRplidar()
-        lidar_device.connectlidar()
-        lidar_device.startmotor(my_scanmode=config.LIDAR_SCAN_MODE)
-        logger.info("LiDAR initialized successfully")
-        return lidar_device
-    except Exception as e:
-        logger.error(f"Failed to initialize LiDAR: {e}")
-        return None
-
-def initialize_gps(config):
-    """Initialize the GPS module"""
-    try:
-        gps_serial_port = serial.Serial(
-            config.GPS_PORT, 
-            baudrate=config.GPS_BAUD_RATE, 
-            timeout=config.GPS_TIMEOUT
-        )
-        logger.info("GPS initialized successfully")
-        return gps_serial_port
-    except Exception as e:
-        logger.error(f"Failed to initialize GPS: {e}")
         return None
 
 def initialize_icm20948(i2c_bus, config):
