@@ -4,6 +4,7 @@ from scipy.signal import find_peaks
 from scipy import stats
 from collections import deque
 from datetime import datetime
+import time  # Add for performance measurements
 
 logger = logging.getLogger("SensorFusion")
 
@@ -36,6 +37,15 @@ class RoadQualityAnalyzer:
         self.lidar_quality_score = 80  # Initialize with a more realistic value than 100
         self.lidar_segment_scores = deque(maxlen=10)
         self.lidar_calibration_attempts = 0  # Track calibration attempts
+        
+        # Add performance tracking
+        self.processing_times = deque(maxlen=50)
+        self.enable_profiling = True  # Set to False in production
+        
+        # Cache for pre-computed values
+        self._angle_cache = {}  # Cache for angle conversions
+        self._last_quality_calculation = 0  # Timestamp of last calculation
+        self._quality_calculation_interval = 0.1  # Minimum seconds between recalculations
         
         logger.info("Road Quality Analyzer initialized")
     
@@ -148,55 +158,84 @@ class RoadQualityAnalyzer:
         return self.current_quality_score
     
     def analyze_frequency_spectrum(self, accel_data):
-        """Analyze the frequency spectrum of vibrations to classify road texture"""
+        """Analyze the frequency spectrum of vibrations to classify road texture - Optimized version"""
         if len(accel_data) < 10:
             return self.road_texture_score
         
-        # Add new accelerometer data to FFT window
+        # Only update FFT periodically rather than with every analyze call
+        current_time = time.time()
+        if hasattr(self, '_last_fft_time') and current_time - self._last_fft_time < 0.5:
+            return self.road_texture_score
+            
+        self._last_fft_time = current_time
+            
+        # Start timing if profiling is enabled
+        start_time = time.time() if self.enable_profiling else 0
+        
+        # Extend the FFT window with new data (more efficient than replacing)
         self.fft_window.extend(list(accel_data)[-10:])
         
         if len(self.fft_window) < 64:  # Need sufficient data for FFT
             return self.road_texture_score
         
-        # Perform FFT on the window
-        signal = np.array(self.fft_window) - np.mean(self.fft_window)  # Remove DC component
-        fft_result = np.abs(np.fft.rfft(signal * np.hanning(len(signal))))
+        # Optimize: Pre-calculate the Hanning window once
+        if not hasattr(self, '_hanning_window') or len(self._hanning_window) != len(self.fft_window):
+            self._hanning_window = np.hanning(len(self.fft_window))
         
-        # Get frequency bins
-        freq_bins = np.fft.rfftfreq(len(signal), d=0.1)  # Assuming 10Hz sampling
+        # Perform FFT on the window - optimize with pre-computed values
+        signal_array = np.array(self.fft_window)
+        signal = signal_array - np.mean(signal_array)  # Remove DC component
         
-        # Find dominant frequencies (excluding DC)
-        peak_indices, _ = find_peaks(fft_result[1:])
-        peak_indices = peak_indices + 1  # Adjust for the DC offset
+        # Apply window function and perform FFT in one optimized step
+        fft_result = np.abs(np.fft.rfft(signal * self._hanning_window))
         
-        if len(peak_indices) > 0:
-            # Sort by amplitude
-            sorted_peaks = sorted([(i, fft_result[i]) for i in peak_indices], 
-                                  key=lambda x: x[1], reverse=True)
+        # Get frequency bins - only compute if we need to update dominant frequencies
+        if fft_result.size > 1:  # Make sure we have meaningful results
+            freq_bins = np.fft.rfftfreq(len(signal), d=0.1)  # Assuming 10Hz sampling
             
-            # Take the top peak
-            if sorted_peaks:
-                dominant_idx = sorted_peaks[0][0]
-                dominant_freq = freq_bins[dominant_idx]
+            # Find dominant frequencies (excluding DC)
+            # Optimize: Use simplified peak finding for performance
+            peak_indices, _ = find_peaks(fft_result[1:], height=np.max(fft_result[1:]) * 0.3)
+            peak_indices = peak_indices + 1  # Adjust for the DC offset
+            
+            if len(peak_indices) > 0:
+                # Optimize: Use numpy's argmax instead of sorting
+                if len(peak_indices) > 1:
+                    peak_amplitudes = fft_result[peak_indices]
+                    max_peak_idx = peak_indices[np.argmax(peak_amplitudes)]
+                else:
+                    max_peak_idx = peak_indices[0]
+                
+                dominant_freq = freq_bins[max_peak_idx]
                 self.dominant_frequencies.append(dominant_freq)
                 
-                # Classify road texture based on dominant frequency
-                # Low frequencies (1-3 Hz): large undulations
-                # Mid frequencies (4-15 Hz): general roughness
-                # High frequencies (>15 Hz): fine texture/grain
-                
+                # Classify road texture with optimized logic
                 if dominant_freq < 3:
                     texture = "Undulating"
                     self.road_texture_score = max(40, self.road_texture_score - 5)
                 elif dominant_freq < 15:
                     texture = "Rough"
-                    self.road_texture_score = max(20, min(80, self.road_texture_score))
+                    # Use simpler averaging formula
+                    self.road_texture_score = (self.road_texture_score * 0.8) + (50 * 0.2)
                 else:
                     texture = "Fine-grained"
                     self.road_texture_score = min(60, self.road_texture_score + 5)
                 
-                logger.debug(f"Road texture: {texture} (dominant freq: {dominant_freq:.1f}Hz)")
+                # Only log at appropriate level and when value changes significantly
+                if logger.isEnabledFor(logging.DEBUG) and (
+                   not hasattr(self, '_last_texture') or self._last_texture != texture):
+                    logger.debug(f"Road texture: {texture} (dominant freq: {dominant_freq:.1f}Hz)")
+                    self._last_texture = texture
         
+        # Performance logging
+        if self.enable_profiling:
+            fft_time = time.time() - start_time
+            if not hasattr(self, '_fft_times'):
+                self._fft_times = deque(maxlen=20)
+            self._fft_times.append(fft_time * 1000)  # ms
+            if len(self._fft_times) % 10 == 0:
+                logger.debug(f"FFT processing avg time: {np.mean(self._fft_times):.2f}ms")
+                
         return self.road_texture_score
     
     def calibrate_lidar(self, lidar_data):
@@ -242,10 +281,21 @@ class RoadQualityAnalyzer:
         return True
     
     def calculate_lidar_road_quality(self, lidar_data):
-        """Calculate road quality score based on LiDAR data"""
+        """Calculate road quality score based on LiDAR data - Optimized version"""
+        # Early return if no data is available
         if not lidar_data:
             logger.debug("No LiDAR data available for road quality calculation")
             return self.lidar_quality_score
+            
+        # Rate limiting to avoid excessive calculations
+        current_time = time.time()
+        if current_time - self._last_quality_calculation < self._quality_calculation_interval:
+            return self.lidar_quality_score
+        
+        self._last_quality_calculation = current_time
+        
+        # Start timing if profiling is enabled
+        start_time = time.time() if self.enable_profiling else 0
             
         # Calibrate if needed
         if not self.lidar_calibrated:
@@ -255,50 +305,58 @@ class RoadQualityAnalyzer:
                 return self.lidar_quality_score
                 
         # Extract valid points for analysis
-        points = []
+        # Optimize: Pre-allocate arrays and use vectorized operations where possible
+        valid_points = []
+        angles_deg = []
+        distances = []
+        
+        # Process all points in a single pass to avoid multiple iterations
         for point in lidar_data:
             angle_deg = point[0]
             distance = point[1]
             
-            # Convert 315-360 degrees to -45-0 degrees
-            if angle_deg >= 315 and angle_deg <= 360:
-                angle_deg = angle_deg - 360
+            # Use cached angle conversions when possible
+            if angle_deg in self._angle_cache:
+                converted_angle = self._angle_cache[angle_deg]
+            else:
+                # Convert 315-360 degrees to -45-0 degrees
+                converted_angle = angle_deg - 360 if angle_deg >= 315 and angle_deg <= 360 else angle_deg
+                self._angle_cache[angle_deg] = converted_angle
                 
             # Use a wider angle range for road profile analysis (-35 to 35 degrees)
-            if -35 <= angle_deg <= 35:
-                points.append((angle_deg, distance))
+            if -35 <= converted_angle <= 35:
+                valid_points.append((converted_angle, distance))
+                angles_deg.append(converted_angle)
+                distances.append(distance)
         
-        if len(points) < 8:
-            logger.debug(f"Not enough valid LiDAR points for analysis: {len(points)} (need 8+)")
+        if len(valid_points) < 8:
+            logger.debug(f"Not enough valid LiDAR points for analysis: {len(valid_points)} (need 8+)")
             return self.lidar_quality_score
             
-        # Sort by angle
-        points.sort(key=lambda p: p[0])
+        # Optimize: Convert directly to numpy arrays instead of extracting later
+        angles_deg = np.array(angles_deg)
+        distances = np.array(distances)
         
-        # Extract angles and distances as arrays
-        angles_deg = np.array([p[0] for p in points])
-        distances = np.array([p[1] for p in points])
-        
-        # Convert angles to radians for math operations
+        # Convert angles to radians - do once for all calculations
         angles_rad = np.radians(angles_deg)
         
-        logger.debug(f"Analyzing road quality with {len(points)} LiDAR points")
-        
-        # For a perfectly flat road, the expected distance follows d = d₀/cos(θ)
-        # where d₀ is the height of the LiDAR from the ground (distance at 0°)
+        # Optimize: Only log at debug level and only if enabled
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Analyzing road quality with {len(valid_points)} LiDAR points")
         
         # Step 1: Estimate d₀ (LiDAR height from ground) more robustly
-        center_indices = np.where(np.abs(angles_deg) < 5)[0]
-        if len(center_indices) > 0:
-            estimated_height = np.median(distances[center_indices])
+        # Optimize: Use numpy's built-in comparison and avoid loops
+        center_mask = np.abs(angles_deg) < 5
+        if np.any(center_mask):
+            estimated_height = np.median(distances[center_mask])
         else:
-            # If no center points available, estimate height using local fitting
-            # to prevent underestimation
+            # If no center points available, estimate height using min
             estimated_height = np.min(distances) * 1.05  # Add 5% margin
         
         # Step 2: Calculate expected distances for a flat road using cosine model
-        # Add a small epsilon to prevent division by zero at extreme angles
+        # Optimize: Vectorized calculation with appropriate guards
         cos_values = np.cos(angles_rad)
+        # Use vectorized maximum to avoid loops
         cos_values = np.maximum(cos_values, 0.1)  # Prevent values too close to zero
         expected_distances = estimated_height / cos_values
         
@@ -306,75 +364,81 @@ class RoadQualityAnalyzer:
         residuals = distances - expected_distances
         
         # Step 4: Determine if the surface is convex or concave (road crown or dip)
-        # Fit a quadratic function to account for road camber/crown
-        try:
-            # Try quadratic fit to handle road crown/camber
-            quad_coeffs = np.polyfit(angles_deg, residuals, 2)
-            quad_fit = np.polyval(quad_coeffs, angles_deg)
-            # Remove the quadratic component from residuals
-            adjusted_residuals = residuals - quad_fit
-        except:
+        # Optimize: Only perform quadratic fit if we have enough points
+        if len(angles_deg) >= 5:  # Need at least 5 points for a meaningful fit
+            try:
+                # Try quadratic fit to handle road crown/camber
+                # Optimize: Use lower-degree polynomial if fewer points
+                quad_coeffs = np.polyfit(angles_deg, residuals, min(2, len(angles_deg) - 1))
+                quad_fit = np.polyval(quad_coeffs, angles_deg)
+                # Remove the quadratic component from residuals
+                adjusted_residuals = residuals - quad_fit
+            except:
+                adjusted_residuals = residuals
+        else:
             adjusted_residuals = residuals
         
-        # Calculate quality metrics on adjusted residuals
+        # Calculate quality metrics on adjusted residuals - all vectorized operations
         mean_abs_deviation = np.mean(np.abs(adjusted_residuals))
         max_deviation = np.max(np.abs(adjusted_residuals))
         residual_std = np.std(adjusted_residuals)
         
         # Calculate R² equivalent with adjusted model
+        # Optimize: Only compute if needed for score calculation
         ss_res = np.sum(adjusted_residuals**2)
-        ss_tot = np.sum((distances - np.mean(distances))**2)
+        mean_distance = np.mean(distances)
+        ss_tot = np.sum((distances - mean_distance)**2)
         r_squared = 1 - (ss_res / ss_tot if ss_tot > 0 else 0)
         
         # Adaptive scaling: determine reasonable thresholds based on the data
-        # This handles different scales of LiDAR measurements (mm vs cm vs m)
-        measurement_scale = np.median(distances) * 0.001  # 0.1% of median distance
-        # Ensure minimum scale is at least 5mm
-        measurement_scale = max(5.0, measurement_scale)
+        # Optimize: Simplify calculations
+        measurement_scale = max(5.0, np.median(distances) * 0.001)  # 0.1% of median, min 5mm
         
-        # Calculate quality score (0-100 scale)
-        base_score = 98  # Start from 98 instead of 95 to allow close to perfect scores
-        
-        # Scale penalties based on reasonable expectations for road surfaces
-        # For linearity - roads are rarely perfect but good roads are close
-        linearity_penalty = (1 - r_squared) * 20  # Reduced from 30 to 20
-        
-        # For standard deviation - scale by the measurement_scale
-        # Good roads typically have under 10mm standard deviation
+        # Calculate quality score with simplified calculations
+        base_score = 98
+        linearity_penalty = (1 - r_squared) * 20
         std_scale = max(10.0, measurement_scale * 1.5)
-        std_penalty = min(25, (residual_std / std_scale) * 25)  # Reduced max impact
-        
-        # Maximum deviation - scale for common road features
-        # Good roads might have 20-30mm max deviation
+        std_penalty = min(25, (residual_std / std_scale) * 25)
         max_dev_scale = max(30.0, measurement_scale * 3)
         max_penalty = min(30, (max_deviation / max_dev_scale) * 30)
-        
-        # Calculate final score with adjusted penalties
         quality_score = max(0, base_score - linearity_penalty - std_penalty - max_penalty)
         
         # Boost scores for very good roads
         if quality_score > 90:
-            # If it's already above 90, reduce the gap to 100, but cap at 100
             quality_score = min(100, 90 + (quality_score - 90) * 2)
         
-        # Detect events for significant deviations
-        self._detect_lidar_events(adjusted_residuals, angles_deg, distances, quality_score)
+        # Only detect events for significant quality drops to save processing
+        if quality_score < 75 or self.lidar_quality_score - quality_score > 10:
+            self._detect_lidar_events(adjusted_residuals, angles_deg, distances, quality_score)
         
         # Smooth the score with previous readings, using weighted average
         self.lidar_segment_scores.append(quality_score)
-        weights = np.linspace(0.5, 1.0, len(self.lidar_segment_scores))
-        weighted_scores = np.array(self.lidar_segment_scores) * weights
-        self.lidar_quality_score = min(100, np.sum(weighted_scores) / np.sum(weights))
         
-        # Log detailed quality metrics for debugging
-        logger.debug(f"Road quality: r²={r_squared:.3f}, std={residual_std:.2f}mm, max_dev={max_deviation:.2f}mm")
-        logger.debug(f"Measurement scale: {measurement_scale:.2f}, std_scale: {std_scale:.2f}, max_dev_scale: {max_dev_scale:.2f}")
-        logger.debug(f"Penalties: linearity={linearity_penalty:.1f}, std={std_penalty:.1f}, max={max_penalty:.1f}")
-        logger.debug(f"Quality score: {quality_score:.1f} → smoothed: {self.lidar_quality_score:.1f}")
+        # Optimize: Use numpy's array operations for weighted average
+        if len(self.lidar_segment_scores) > 0:
+            weights = np.linspace(0.5, 1.0, len(self.lidar_segment_scores))
+            weighted_scores = np.array(self.lidar_segment_scores) * weights
+            self.lidar_quality_score = min(100, np.sum(weighted_scores) / np.sum(weights))
+        
+        # Conditional logging based on level
+        if self.enable_profiling:
+            processing_time = time.time() - start_time
+            self.processing_times.append(processing_time)
+            if len(self.processing_times) % 10 == 0:
+                avg_time = np.mean(self.processing_times) * 1000  # Convert to ms
+                logger.debug(f"LiDAR quality calculation avg time: {avg_time:.2f}ms")
+        
+        # Only log detailed quality metrics if debug is enabled
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Road quality: r²={r_squared:.3f}, std={residual_std:.2f}mm, max_dev={max_deviation:.2f}mm")
+            logger.debug(f"Quality score: {quality_score:.1f} → smoothed: {self.lidar_quality_score:.1f}")
         
         # Log significant changes in road quality
         road_class = self.get_road_classification_from_score(self.lidar_quality_score)
-        logger.info(f"LiDAR road quality: {self.lidar_quality_score:.1f}/100 ({road_class})")
+        if not hasattr(self, '_last_reported_quality') or \
+           abs(self._last_reported_quality - self.lidar_quality_score) > 5:
+            logger.info(f"LiDAR road quality: {self.lidar_quality_score:.1f}/100 ({road_class})")
+            self._last_reported_quality = self.lidar_quality_score
         
         return self.lidar_quality_score
     
