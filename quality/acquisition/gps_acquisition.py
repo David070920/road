@@ -6,7 +6,7 @@ logger = logging.getLogger("SensorFusion")
 
 def gps_thread_func(serial_port, gps_data_lock, gps_data, stop_event, config, map_update_func=None, sensor_fusion=None):
     """Thread function for GPS acquisition"""
-    logger.info("GPS thread started")
+    logger.debug("GPS thread started")
     last_map_update = 0
     while not stop_event.is_set():
         try:
@@ -41,7 +41,7 @@ def gps_thread_func(serial_port, gps_data_lock, gps_data, stop_event, config, ma
                     except Exception as e:
                         logger.error(f"Error updating GPS map: {e}")
                 
-                logger.info(f"GPS: {gps_data}")
+                logger.debug(f"GPS: {gps_data}")
                 
         except Exception as e:
             logger.debug(f"Error in GPS thread: {e}")
@@ -49,4 +49,4 @@ def gps_thread_func(serial_port, gps_data_lock, gps_data, stop_event, config, ma
         # Sleep to prevent high CPU usage
         time.sleep(0.2)
         
-    logger.info("GPS thread stopped")
+    logger.debug("GPS thread stopped")

@@ -100,7 +100,8 @@ def gps_thread_func(gps_serial_port, gps_data_lock, gps_data, stop_event, config
                     update_gps_map(gps_data, config, getattr(sensor_instance, 'analyzer', None))
                     sensor_instance.last_map_update = current_time
                 
-                logger.info(f"GPS: {gps_data}")
+                # Comment out or change to debug to stop printing GPS data
+                # logger.info(f"GPS: {gps_data}")
                 
         except Exception as e:
             logger.debug(f"Error in GPS thread: {e}")

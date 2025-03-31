@@ -6,14 +6,14 @@ logger = logging.getLogger("SensorFusion")
 
 def env_thread_func(i2c_bus, env_data_lock, env_data, stop_event, config):
     """Thread function for environmental sensors (AHT21 and BMX280) acquisition"""
-    logger.info("Environmental sensors thread started")
+    logger.debug("Environmental sensors thread started")
     
     # Read BMX280 calibration data once at startup
     bmx280_calibration = None
     try:
         bmx280_calibration = read_bmx280_calibration(i2c_bus, config)
         if bmx280_calibration:
-            logger.info("BMX280 calibration data read successfully")
+            logger.debug("BMX280 calibration data read successfully")
         else:
             logger.warning("Failed to read BMX280 calibration data")
     except Exception as e:
@@ -66,21 +66,21 @@ def env_thread_func(i2c_bus, env_data_lock, env_data, stop_event, config):
                         except:
                             pass
                 
-                # Log environmental data less frequently to avoid spamming the log
-                if hasattr(env_thread_func, "_log_counter"):
-                    env_thread_func._log_counter += 1
-                else:
-                    env_thread_func._log_counter = 0
+                # Comment out or set to debug level to disable serial output of environmental data
+                # if hasattr(env_thread_func, "_log_counter"):
+                #     env_thread_func._log_counter += 1
+                # else:
+                #     env_thread_func._log_counter = 0
                     
-                if env_thread_func._log_counter % 10 == 0:  # Log every ~20 seconds
-                    log_msg = "Environmental data: "
-                    if aht21_data:
-                        log_msg += f"Temp: {aht21_data['temperature']}°C, Humidity: {aht21_data['humidity']}%"
-                    if bmx280_data:
-                        log_msg += f", Pressure: {bmx280_data['pressure']} hPa"
-                    if 'altitude' in env_data:
-                        log_msg += f", Est. Altitude: {env_data['altitude']} m"
-                    logger.info(log_msg)
+                # if env_thread_func._log_counter % 10 == 0:  # Log every ~20 seconds
+                #     log_msg = "Environmental data: "
+                #     if aht21_data:
+                #         log_msg += f"Temp: {aht21_data['temperature']}°C, Humidity: {aht21_data['humidity']}%"
+                #     if bmx280_data:
+                #         log_msg += f", Pressure: {bmx280_data['pressure']} hPa"
+                #     if 'altitude' in env_data:
+                #         log_msg += f", Est. Altitude: {env_data['altitude']} m"
+                #     logger.info(log_msg)
                 
         except Exception as e:
             logger.error(f"Error in environmental sensors thread: {e}")
@@ -88,4 +88,4 @@ def env_thread_func(i2c_bus, env_data_lock, env_data, stop_event, config):
         # Sleep to prevent high CPU usage
         time.sleep(0.5)  # Shorter sleep time than the update interval
         
-    logger.info("Environmental sensors thread stopped")
+    logger.debug("Environmental sensors thread stopped")

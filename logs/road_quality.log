@@ -1,0 +1,116 @@
+2025-03-31 19:12:52,535 - __main__ - INFO - Starting Road Quality Measurement System
+2025-03-31 19:12:52,535 - SensorFusion - INFO - Starting SensorFusion - User: David070920, Session start: 2025-03-29 11:17:21
+2025-03-31 19:12:52,536 - SensorFusion - INFO - Road Quality Analyzer initialized
+2025-03-31 19:12:52,536 - SensorFusion - INFO - GPS map generation is disabled
+2025-03-31 19:13:06,621 - __main__ - INFO - Starting Road Quality Measurement System
+2025-03-31 19:13:06,621 - SensorFusion - INFO - Starting SensorFusion - User: David070920, Session start: 2025-03-29 11:17:21
+2025-03-31 19:13:06,621 - SensorFusion - INFO - Road Quality Analyzer initialized
+2025-03-31 19:13:06,621 - SensorFusion - INFO - GPS map generation is disabled
+2025-03-31 19:13:10,059 - SensorFusion - INFO - LiDAR initialized successfully
+2025-03-31 19:13:10,061 - SensorFusion - INFO - GPS initialized successfully
+2025-03-31 19:13:10,062 - SensorFusion - INFO - ICM20948 found at address 0x69
+2025-03-31 19:13:10,162 - SensorFusion - INFO - AHT21 found at address 0x38
+2025-03-31 19:13:10,205 - SensorFusion - INFO - AHT21 sensor initialized successfully
+2025-03-31 19:13:10,206 - SensorFusion - INFO - BMx280 found at address 0x77, chip ID: 0x58
+2025-03-31 19:13:10,263 - SensorFusion - INFO - BMx280 sensor initialized successfully
+2025-03-31 19:13:10,264 - SensorFusion - INFO - LiDAR thread started
+2025-03-31 19:13:10,265 - SensorFusion - INFO - GPS thread started
+2025-03-31 19:13:10,265 - SensorFusion - INFO - Accelerometer thread started
+2025-03-31 19:13:10,531 - SensorFusion - INFO - Environmental sensors thread started
+2025-03-31 19:13:10,532 - SensorFusion - INFO - Analysis thread started
+2025-03-31 19:13:10,532 - SensorFusion - INFO - Visualization disabled in configuration
+2025-03-31 19:13:10,535 - SensorFusion - INFO - BMX280 calibration data read successfully
+2025-03-31 19:13:10,580 - WebServer - INFO - Web server initialized on http://0.0.0.0:8080/
+2025-03-31 19:13:10,580 - WebServer - INFO - Setting up ngrok tunnel (version: Unknown)...
+2025-03-31 19:13:10,581 - SensorFusion - INFO - Web interface available at http://0.0.0.0:8080
+2025-03-31 19:13:10,581 - WebServer - INFO - Starting data update loop thread
+2025-03-31 19:13:10,582 - WebServer - INFO - Starting ngrok tunnel (attempt 1/3)...
+2025-03-31 19:13:10,582 - NgrokHelper - INFO - Configuring ngrok with auth token
+2025-03-31 19:13:10,582 - pyngrok.process - INFO - Updating authtoken for default "config_path" of "ngrok_path": /home/david/.config/ngrok/ngrok
+2025-03-31 19:13:10,612 - NgrokHelper - INFO - Using ngrok region: eu
+2025-03-31 19:13:10,616 - pyngrok.process - INFO - Starting ngrok in region: eu
+2025-03-31 19:13:10,623 - SensorFusion - INFO - Environmental data: Temp: -1.2°C, Humidity: 46.0%, Pressure: 1009.6 hPa, Est. Altitude: 30.4 m
+2025-03-31 19:13:10,632 - SensorFusion - INFO - LiDAR scan data received after 1 empty scans
+2025-03-31 19:13:10,656 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg="command usage" msg="Flag --region has been deprecated, ngrok automatically chooses the region with lowest latency"
+2025-03-31 19:13:10,658 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg="no configuration paths supplied"
+2025-03-31 19:13:10,660 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg="using configuration at default config path" path=/home/david/.config/ngrok/ngrok.yml
+2025-03-31 19:13:10,664 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg="open config file" path=/home/david/.config/ngrok/ngrok.yml err=nil
+2025-03-31 19:13:10,686 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg="starting web service" obj=web addr=127.0.0.1:4040 allow_hosts=[]
+2025-03-31 19:13:10,937 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg="client session established" obj=tunnels.session
+2025-03-31 19:13:10,937 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg="tunnel session started" obj=tunnels.session
+2025-03-31 19:13:10,940 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg=start pg=/api/tunnels id=3f2d0a236cd84570
+2025-03-31 19:13:10,941 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg=end pg=/api/tunnels id=3f2d0a236cd84570 status=200 dur=248.871µs
+2025-03-31 19:13:10,941 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg=start pg=/api/tunnels id=a81ec70193305e0d
+2025-03-31 19:13:10,941 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg=end pg=/api/tunnels id=a81ec70193305e0d status=200 dur=232.389µs
+2025-03-31 19:13:10,942 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg=start pg=/api/tunnels id=a541253822825f31
+2025-03-31 19:13:10,943 - NgrokHelper - INFO - Starting ngrok tunnel to port 8080...
+2025-03-31 19:13:10,943 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg=end pg=/api/tunnels id=a541253822825f31 status=200 dur=119.982µs
+2025-03-31 19:13:10,944 - pyngrok.ngrok - INFO - Opening tunnel named: http-8080-2cae8a46-dc42-4554-884d-728aff57806f
+2025-03-31 19:13:10,946 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:10+0300 lvl=info msg=start pg=/api/tunnels id=ebf196dc453d627e
+2025-03-31 19:13:11,011 - NgrokHelper - INFO - Ngrok tunnel established: https://db57-5-14-199-106.ngrok-free.app
+2025-03-31 19:13:11,012 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:11+0300 lvl=info msg="started tunnel" obj=tunnels name=http-8080-2cae8a46-dc42-4554-884d-728aff57806f addr=http://localhost:8080 url=https://db57-5-14-199-106.ngrok-free.app
+2025-03-31 19:13:11,013 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:11+0300 lvl=info msg=end pg=/api/tunnels id=ebf196dc453d627e status=201 dur=64.01995ms
+2025-03-31 19:13:11,015 - WebServer - INFO - ✅ Remote access URL: https://db57-5-14-199-106.ngrok-free.app
+2025-03-31 19:13:11,015 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:11+0300 lvl=info msg=start pg=/api/tunnels id=fc834a7e16fef65b
+2025-03-31 19:13:11,016 - WebServer - INFO - 📱 Scan QR code to access: https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl=https://db57-5-14-199-106.ngrok-free.app
+2025-03-31 19:13:11,017 - pyngrok.process.ngrok - INFO - t=2025-03-31T19:13:11+0300 lvl=info msg=end pg=/api/tunnels id=fc834a7e16fef65b status=200 dur=230.575µs
+2025-03-31 19:13:11,022 - WebServer - INFO - Starting web server on http://0.0.0.0:8080/
+2025-03-31 19:13:11,079 - SensorFusion - INFO - LiDAR calibrated: baseline distance=385.88mm with 6 points
+2025-03-31 19:13:11,084 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1505.49mm at angle=4.4°
+2025-03-31 19:13:11,085 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://192.168.0.19:8080
+2025-03-31 19:13:11,085 - SensorFusion - INFO - LiDAR road quality: 43.3/100 (Poor)
+2025-03-31 19:13:11,086 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-03-31 19:13:11,588 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1762.77mm at angle=7.6°
+2025-03-31 19:13:11,588 - SensorFusion - INFO - LiDAR detected Pothole: severity=66, deviation=387.62mm at angle=-22.5°
+2025-03-31 19:13:11,588 - SensorFusion - INFO - LiDAR detected Bump: severity=69, deviation=-402.04mm at angle=-6.4°
+2025-03-31 19:13:11,588 - SensorFusion - INFO - LiDAR road quality: 38.2/100 (Very Poor)
+2025-03-31 19:13:12,089 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1761.09mm at angle=6.9°
+2025-03-31 19:13:12,089 - SensorFusion - INFO - LiDAR detected Pothole: severity=55, deviation=323.44mm at angle=-23.0°
+2025-03-31 19:13:12,090 - SensorFusion - INFO - LiDAR detected Bump: severity=76, deviation=-447.65mm at angle=-7.0°
+2025-03-31 19:13:12,415 - SensorFusion - INFO - GPS: {'timestamp': None, 'lat': 0.0, 'lon': 0.0, 'alt': None, 'sats': '00', 'lock': <unlocked _thread.RLock object owner=0 count=0 at 0x7faccbb880>}
+2025-03-31 19:13:12,614 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1704.63mm at angle=7.2°
+2025-03-31 19:13:12,615 - SensorFusion - INFO - LiDAR detected Pothole: severity=71, deviation=413.85mm at angle=-23.1°
+2025-03-31 19:13:12,615 - SensorFusion - INFO - LiDAR detected Bump: severity=86, deviation=-503.15mm at angle=-6.4°
+2025-03-31 19:13:13,116 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1753.72mm at angle=6.1°
+2025-03-31 19:13:13,116 - SensorFusion - INFO - LiDAR detected Pothole: severity=55, deviation=321.06mm at angle=-24.1°
+2025-03-31 19:13:13,116 - SensorFusion - INFO - LiDAR detected Bump: severity=78, deviation=-457.71mm at angle=-7.6°
+2025-03-31 19:13:13,116 - SensorFusion - INFO - LiDAR road quality: 32.7/100 (Very Poor)
+2025-03-31 19:13:13,506 - SensorFusion - INFO - GPS: {'timestamp': None, 'lat': 0.0, 'lon': 0.0, 'alt': None, 'sats': '00', 'lock': <unlocked _thread.RLock object owner=0 count=0 at 0x7faccbb880>}
+2025-03-31 19:13:13,617 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1764.83mm at angle=6.4°
+2025-03-31 19:13:13,617 - SensorFusion - INFO - LiDAR detected Pothole: severity=55, deviation=320.45mm at angle=34.3°
+2025-03-31 19:13:13,618 - SensorFusion - INFO - LiDAR detected Bump: severity=79, deviation=-465.25mm at angle=-7.0°
+2025-03-31 19:13:14,152 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1758.11mm at angle=7.1°
+2025-03-31 19:13:14,152 - SensorFusion - INFO - LiDAR detected Pothole: severity=55, deviation=320.85mm at angle=-22.7°
+2025-03-31 19:13:14,152 - SensorFusion - INFO - LiDAR detected Bump: severity=76, deviation=-446.38mm at angle=-6.5°
+2025-03-31 19:13:14,599 - SensorFusion - INFO - GPS: {'timestamp': None, 'lat': 0.0, 'lon': 0.0, 'alt': None, 'sats': '00', 'lock': <unlocked _thread.RLock object owner=0 count=0 at 0x7faccbb880>}
+2025-03-31 19:13:14,653 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1468.58mm at angle=3.9°
+2025-03-31 19:13:15,155 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1514.40mm at angle=4.7°
+2025-03-31 19:13:15,690 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1785.12mm at angle=5.9°
+2025-03-31 19:13:15,690 - SensorFusion - INFO - LiDAR detected Pothole: severity=64, deviation=375.69mm at angle=-28.6°
+2025-03-31 19:13:15,690 - SensorFusion - INFO - LiDAR detected Bump: severity=77, deviation=-451.83mm at angle=-7.5°
+2025-03-31 19:13:15,691 - SensorFusion - INFO - LiDAR road quality: 26.6/100 (Very Poor)
+2025-03-31 19:13:15,691 - SensorFusion - INFO - Road quality: 26.6/100 (Very Poor), Texture: 40.0/100
+2025-03-31 19:13:15,692 - SensorFusion - INFO - GPS: {'timestamp': None, 'lat': 0.0, 'lon': 0.0, 'alt': None, 'sats': '00', 'lock': <unlocked _thread.RLock object owner=0 count=0 at 0x7faccbb880>}
+2025-03-31 19:13:16,192 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1741.27mm at angle=6.0°
+2025-03-31 19:13:16,192 - SensorFusion - INFO - LiDAR detected Pothole: severity=59, deviation=346.43mm at angle=-24.2°
+2025-03-31 19:13:16,193 - SensorFusion - INFO - LiDAR detected Bump: severity=81, deviation=-474.12mm at angle=-7.5°
+2025-03-31 19:13:16,193 - SensorFusion - INFO - Calibrated: baseline=1.017g, threshold=0.300g
+2025-03-31 19:13:16,695 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1741.57mm at angle=6.5°
+2025-03-31 19:13:16,696 - SensorFusion - INFO - LiDAR detected Pothole: severity=59, deviation=347.26mm at angle=-23.6°
+2025-03-31 19:13:16,696 - SensorFusion - INFO - LiDAR detected Bump: severity=79, deviation=-464.26mm at angle=-7.3°
+2025-03-31 19:13:16,784 - SensorFusion - INFO - GPS: {'timestamp': None, 'lat': 0.0, 'lon': 0.0, 'alt': None, 'sats': '00', 'lock': <unlocked _thread.RLock object owner=0 count=0 at 0x7faccbb880>}
+2025-03-31 19:13:17,227 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1479.90mm at angle=4.4°
+2025-03-31 19:13:17,728 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1759.26mm at angle=5.7°
+2025-03-31 19:13:17,729 - SensorFusion - INFO - LiDAR detected Pothole: severity=53, deviation=312.69mm at angle=-24.3°
+2025-03-31 19:13:17,729 - SensorFusion - INFO - LiDAR detected Bump: severity=79, deviation=-460.05mm at angle=-7.8°
+2025-03-31 19:13:17,922 - SensorFusion - INFO - GPS: {'timestamp': None, 'lat': 0.0, 'lon': 0.0, 'alt': None, 'sats': '00', 'lock': <unlocked _thread.RLock object owner=0 count=0 at 0x7faccbb880>}
+2025-03-31 19:13:18,230 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1523.01mm at angle=4.1°
+2025-03-31 19:13:18,731 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1727.74mm at angle=6.0°
+2025-03-31 19:13:18,732 - SensorFusion - INFO - LiDAR detected Pothole: severity=60, deviation=353.85mm at angle=-24.0°
+2025-03-31 19:13:18,732 - SensorFusion - INFO - LiDAR detected Bump: severity=80, deviation=-469.38mm at angle=-7.8°
+2025-03-31 19:13:19,014 - SensorFusion - INFO - GPS: {'timestamp': None, 'lat': 0.0, 'lon': 0.0, 'alt': None, 'sats': '00', 'lock': <unlocked _thread.RLock object owner=0 count=0 at 0x7faccbb880>}
+2025-03-31 19:13:19,237 - SensorFusion - INFO - LiDAR detected Pothole: severity=100, deviation=1982.24mm at angle=4.7°
+2025-03-31 19:13:19,238 - SensorFusion - INFO - LiDAR detected Bump: severity=54, deviation=-315.75mm at angle=-8.6°

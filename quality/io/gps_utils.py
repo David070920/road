@@ -144,6 +144,7 @@ def update_gps_map(gps_data, config, analyzer=None):
                 {env_info}
                 <hr>
                 """
+                logger.debug(f"Added environmental data to map: {env_data}")
         
         # Add a marker for the current position
         popup_text = f"""
@@ -222,11 +223,12 @@ def update_gps_map(gps_data, config, analyzer=None):
         
         # Save the map to an HTML file
         m.save(config.MAP_HTML_PATH)
-        logger.info(f"GPS map updated at {config.MAP_HTML_PATH}")
+        # Change to debug level to reduce serial output
+        logger.debug(f"GPS map updated at {config.MAP_HTML_PATH}")
         
         # Verify the file exists
         if os.path.exists(config.MAP_HTML_PATH):
-            logger.info(f"GPS map file successfully created")
+            logger.debug(f"GPS map file successfully created")
         else:
             logger.error(f"Failed to create GPS map file")
             

@@ -30,13 +30,10 @@ class RoadQualityAnalyzer:
         self.dominant_frequencies = deque(maxlen=5)  # Track recent dominant frequencies
         self.road_texture_score = 50  # 0-100 scale (smooth to rough)
         
-        # LiDAR road analysis variables - Initialize with more realistic values
-        self.lidar_baseline_distance = None
-        self.lidar_calibrated = False
+        # LiDAR road analysis variables - With fixed values instead of calibration
         self.lidar_distance_history = deque(maxlen=50)  # Store recent measurements
-        self.lidar_quality_score = 80  # Initialize with a more realistic value than 100
+        self.lidar_quality_score = 80  # Initialize with a reasonable default value
         self.lidar_segment_scores = deque(maxlen=10)
-        self.lidar_calibration_attempts = 0  # Track calibration attempts
         
         # Add performance tracking
         self.processing_times = deque(maxlen=50)
@@ -47,7 +44,7 @@ class RoadQualityAnalyzer:
         self._last_quality_calculation = 0  # Timestamp of last calculation
         self._quality_calculation_interval = 0.1  # Minimum seconds between recalculations
         
-        logger.info("Road Quality Analyzer initialized")
+        logger.debug("Road Quality Analyzer initialized")
     
     def calibrate(self, accel_data):
         """Calibrate the analyzer with current accelerometer data"""
@@ -63,7 +60,7 @@ class RoadQualityAnalyzer:
         self.accel_threshold = max(0.3, 2.5 * std_dev)  # Minimum 0.3g threshold
         
         self.is_calibrated = True
-        logger.info(f"Calibrated: baseline={self.accel_baseline:.3f}g, threshold={self.accel_threshold:.3f}g")
+        logger.debug(f"Calibrated: baseline={self.accel_baseline:.3f}g, threshold={self.accel_threshold:.3f}g")
         return True
     
     def detect_road_events(self, accel_data, gps_data):
@@ -109,9 +106,9 @@ class RoadQualityAnalyzer:
                 
                 new_events.append(event)
                 
-                # Only log significant events
-                if severity > 50:
-                    logger.info(f"Detected {event_type}: severity={severity}, magnitude={magnitude:.3f}g")
+                # Only log significant events - DISABLED to reduce serial spam
+                # if severity > 50:
+                #     logger.info(f"Detected {event_type}: severity={severity}, magnitude={magnitude:.3f}g")
         
         # Add to master event list
         self.events.extend(new_events)
@@ -238,50 +235,8 @@ class RoadQualityAnalyzer:
                 
         return self.road_texture_score
     
-    def calibrate_lidar(self, lidar_data):
-        """Calibrate the LiDAR analysis with current data"""
-        if not lidar_data:
-            self.lidar_calibration_attempts += 1
-            if self.lidar_calibration_attempts % 10 == 0:  # Log only occasionally
-                logger.warning(f"No LiDAR data available for calibration (attempt {self.lidar_calibration_attempts})")
-            return False
-        
-        # Extract distances from valid points (only points directly below/in front)
-        # Use a wider angle range to ensure we get enough points
-        valid_points = []
-        for point in lidar_data:
-            angle_deg = point[0]
-            distance = point[1]
-            
-            # Convert 315-360 degrees to -45-0 degrees
-            if angle_deg >= 315 and angle_deg <= 360:
-                angle_deg = angle_deg - 360
-                
-            # Widen the range to get more points (-15 to 15 degrees)
-            if -15 <= angle_deg <= 15:
-                valid_points.append(distance)
-        
-        if len(valid_points) < 5:  # Need enough points
-            self.lidar_calibration_attempts += 1
-            if self.lidar_calibration_attempts % 10 == 0:
-                logger.warning(f"Not enough valid LiDAR points for calibration: {len(valid_points)} (need 5+)")
-            return False
-            
-        # Calculate baseline distance (median to avoid outliers)
-        self.lidar_baseline_distance = np.median(valid_points)
-        logger.info(f"LiDAR calibrated: baseline distance={self.lidar_baseline_distance:.2f}mm with {len(valid_points)} points")
-        self.lidar_calibrated = True
-        
-        # Force initial quality score to be lower to avoid starting at "perfect"
-        # This ensures users see changes in the score
-        self.lidar_quality_score = 80
-        self.lidar_segment_scores.clear()
-        self.lidar_segment_scores.append(80)
-        
-        return True
-    
     def calculate_lidar_road_quality(self, lidar_data):
-        """Calculate road quality score based on LiDAR data - Optimized version"""
+        """Calculate road quality score based on LiDAR data - Optimized version without calibration"""
         # Early return if no data is available
         if not lidar_data:
             logger.debug("No LiDAR data available for road quality calculation")
@@ -296,13 +251,6 @@ class RoadQualityAnalyzer:
         
         # Start timing if profiling is enabled
         start_time = time.time() if self.enable_profiling else 0
-            
-        # Calibrate if needed
-        if not self.lidar_calibrated:
-            if not self.calibrate_lidar(lidar_data):
-                if self.lidar_calibration_attempts % 20 == 0:
-                    logger.warning("Unable to calibrate LiDAR, using default quality score")
-                return self.lidar_quality_score
                 
         # Extract valid points for analysis
         # Optimize: Pre-allocate arrays and use vectorized operations where possible
@@ -344,17 +292,16 @@ class RoadQualityAnalyzer:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Analyzing road quality with {len(valid_points)} LiDAR points")
         
-        # Step 1: Estimate d₀ (LiDAR height from ground) more robustly
-        # Optimize: Use numpy's built-in comparison and avoid loops
+        # Direct height estimation without relying on calibration
+        # Step 1: Estimate d₀ (LiDAR height from ground) 
         center_mask = np.abs(angles_deg) < 5
         if np.any(center_mask):
             estimated_height = np.median(distances[center_mask])
         else:
-            # If no center points available, estimate height using min
+            # If no center points available, estimate height using min distance
             estimated_height = np.min(distances) * 1.05  # Add 5% margin
         
         # Step 2: Calculate expected distances for a flat road using cosine model
-        # Optimize: Vectorized calculation with appropriate guards
         cos_values = np.cos(angles_rad)
         # Use vectorized maximum to avoid loops
         cos_values = np.maximum(cos_values, 0.1)  # Prevent values too close to zero
@@ -433,12 +380,12 @@ class RoadQualityAnalyzer:
             logger.debug(f"Road quality: r²={r_squared:.3f}, std={residual_std:.2f}mm, max_dev={max_deviation:.2f}mm")
             logger.debug(f"Quality score: {quality_score:.1f} → smoothed: {self.lidar_quality_score:.1f}")
         
-        # Log significant changes in road quality
+        # Log significant changes in road quality - DISABLED to reduce serial spam
         road_class = self.get_road_classification_from_score(self.lidar_quality_score)
-        if not hasattr(self, '_last_reported_quality') or \
-           abs(self._last_reported_quality - self.lidar_quality_score) > 5:
-            logger.info(f"LiDAR road quality: {self.lidar_quality_score:.1f}/100 ({road_class})")
-            self._last_reported_quality = self.lidar_quality_score
+        # if not hasattr(self, '_last_reported_quality') or \
+        #    abs(self._last_reported_quality - self.lidar_quality_score) > 5:
+        #     logger.info(f"LiDAR road quality: {self.lidar_quality_score:.1f}/100 ({road_class})")
+        #     self._last_reported_quality = self.lidar_quality_score
         
         return self.lidar_quality_score
     
@@ -488,10 +435,10 @@ class RoadQualityAnalyzer:
             event_type = "Pothole" if max_residual > 0 else "Bump"
             severity = min(100, int(abs(max_residual) / self.lidar_event_threshold * 50))
             
-            # Only log significant events
-            if severity > 40 and quality_score < 70:
-                logger.info(f"LiDAR detected {event_type}: severity={severity}, " +
-                           f"deviation={max_residual:.2f}mm at angle={event_angle:.1f}°")
+            # Only log significant events - DISABLED to reduce serial spam
+            # if severity > 40 and quality_score < 70:
+            #     logger.info(f"LiDAR detected {event_type}: severity={severity}, " +
+            #                f"deviation={max_residual:.2f}mm at angle={event_angle:.1f}°")
     
     def get_road_classification_from_score(self, score):
         """Get a textual classification based on a quality score"""

@@ -310,8 +310,7 @@ class SensorFusion:
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(f"Analyzing {len(lidar_data)} LiDAR points ({center_points} in center FOV)")
                 
-                # Calculate quality metrics - these don't modify shared state so could be done outside the lock
-                # but we keep them here for code clarity
+                # Calculate quality metrics directly without calibration check
                 quality = self.analyzer.calculate_lidar_road_quality(lidar_data)
                 events = self.analyzer.detect_road_events(accel_data, gps_data)
                 texture = self.analyzer.analyze_frequency_spectrum(accel_data)
@@ -328,8 +327,9 @@ class SensorFusion:
                     self._log_counter = 0
                     
                 self._log_counter += 1
-                if self._log_counter % 10 == 0:
-                    logger.info(f"Road quality: {quality:.1f}/100 ({classification}), Texture: {texture:.1f}/100")
+                # Comment out or change to debug level to stop printing road quality values
+                # if self._log_counter % 10 == 0:
+                #     logger.info(f"Road quality: {quality:.1f}/100 ({classification}), Texture: {texture:.1f}/100")
             
             # Add to GPS quality history for heatmap visualization
             try:
