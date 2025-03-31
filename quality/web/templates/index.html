@@ -14,13 +14,210 @@
         <div class="spinner"></div>
     </div>
     
-    <header>
-        <h1><i class="fas fa-road"></i> Road Quality Analysis Dashboard</h1>
-        <div class="user-info">
-            <span><i class="fas fa-user"></i> User: {{ user_info }}</span>
-            <span><i class="fas fa-clock"></i> Session: {{ session_time }}</span>
-        </div>
-    </header>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <i class="fas fa-road logo-icon"></i>
+                <h1>Road Quality</h1>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <ul>
+                    <li class="active"><a href="#overview"><i class="fas fa-tachometer-alt"></i>Dashboard</a></li>
+                    <li><a href="#events"><i class="fas fa-exclamation-triangle"></i>Road Events</a></li>
+                    <li><a href="#map"><i class="fas fa-map-marked-alt"></i>Map View</a></li>
+                    <li><a href="#settings"><i class="fas fa-cog"></i>Settings</a></li>
+                </ul>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <i class="fas fa-user-circle"></i>
+                    <span>{{ user_info }}</span>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="session-info">
+                    <i class="fas fa-clock"></i>
+                    <span>Session: {{ session_time }}</span>
+                </div>
+                
+                <div class="connection-status" id="connection-status">
+                    <i class="fas fa-wifi"></i>
+                    <span>Connected</span>
+                </div>
+            </header>
+            
+            <!-- Overview Section -->
+            <section class="content-section" id="overview">
+                <!-- Quality Score -->
+                <div class="quality-indicator">
+                    <div class="quality-gauge">
+                        <div class="quality-value" id="quality-value">--</div>
+                        <div class="quality-label" id="quality-classification">--</div>
+                        <canvas id="qualityGauge"></canvas>
+                    </div>
+                    <div class="quality-status">
+                        <div class="status-item">
+                            <i class="fas fa-road"></i>
+                            <span>Road Quality</span>
+                        </div>
+                        <div class="status-item">
+                            <i class="fas fa-tachometer-alt"></i>
+                            <span>Accelerometer</span>
+                        </div>
+                        <div class="status-item" id="lidar-indicator">
+                            <i class="fas fa-radar"></i>
+                            <span>LiDAR</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Data Panels -->
+                <div class="data-panels">
+                    <!-- Accelerometer Panel -->
+                    <div class="data-panel">
+                        <div class="panel-header">
+                            <i class="fas fa-chart-line"></i>
+                            <h2>Accelerometer Data</h2>
+                        </div>
+                        <div class="panel-body">
+                            <canvas id="accelChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- GPS Panel -->
+                    <div class="data-panel">
+                        <div class="panel-header">
+                            <i class="fas fa-satellite"></i>
+                            <h2>GPS Location</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="gps-coordinates">
+                                <div class="coord-item">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <span class="coord-label">Latitude:</span>
+                                    <span class="coord-value" id="lat">--</span>
+                                </div>
+                                <div class="coord-item">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <span class="coord-label">Longitude:</span>
+                                    <span class="coord-value" id="lon">--</span>
+                                </div>
+                                <div class="coord-item">
+                                    <i class="fas fa-satellite-dish"></i>
+                                    <span class="coord-label">Satellites:</span>
+                                    <span class="coord-value" id="sats">--</span>
+                                </div>
+                                <div class="coord-item">
+                                    <i class="fas fa-mountain"></i>
+                                    <span class="coord-label">Altitude:</span>
+                                    <span class="coord-value" id="gps-alt">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Environmental Panel -->
+                    <div class="data-panel">
+                        <div class="panel-header">
+                            <i class="fas fa-cloud-sun"></i>
+                            <h2>Environmental Data</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="env-grid">
+                                <div class="env-item">
+                                    <i class="fas fa-thermometer-half"></i>
+                                    <span class="env-value" id="temperature">--</span>
+                                    <span class="env-label">Temperature (°C)</span>
+                                </div>
+                                <div class="env-item">
+                                    <i class="fas fa-tint"></i>
+                                    <span class="env-value" id="humidity">--</span>
+                                    <span class="env-label">Humidity (%)</span>
+                                </div>
+                                <div class="env-item">
+                                    <i class="fas fa-wind"></i>
+                                    <span class="env-value" id="pressure">--</span>
+                                    <span class="env-label">Pressure (hPa)</span>
+                                </div>
+                                <div class="env-item">
+                                    <i class="fas fa-mountain"></i>
+                                    <span class="env-value" id="altitude">--</span>
+                                    <span class="env-label">Altitude (m)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Events Panel -->
+                    <div class="data-panel" id="events-panel">
+                        <div class="panel-header">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <h2>Road Events</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div id="events-list">
+                                <div class="no-events">No events detected</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- System Panel -->
+                    <div class="data-panel">
+                        <div class="panel-header">
+                            <i class="fas fa-server"></i>
+                            <h2>System Status</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="system-grid">
+                                <div class="system-item">
+                                    <i class="fas fa-microchip"></i>
+                                    <span class="system-value" id="cpu-usage">--</span>
+                                    <span class="system-label">CPU Usage</span>
+                                </div>
+                                <div class="system-item">
+                                    <i class="fas fa-memory"></i>
+                                    <span class="system-value" id="memory-usage">--</span>
+                                    <span class="system-label">Memory</span>
+                                </div>
+                                <div class="system-item">
+                                    <i class="fas fa-hdd"></i>
+                                    <span class="system-value" id="disk-usage">--</span>
+                                    <span class="system-label">Disk</span>
+                                </div>
+                                <div class="system-item">
+                                    <i class="fas fa-network-wired"></i>
+                                    <span class="system-value" id="network-status">--</span>
+                                    <span class="system-label">Network</span>
+                                </div>
+                                <div class="system-item">
+                                    <i class="fas fa-clock"></i>
+                                    <span class="system-value" id="uptime">--</span>
+                                    <span class="system-label">Uptime</span>
+                                </div>
+                                <div class="system-item">
+                                    <i class="fas fa-database"></i>
+                                    <span class="system-value" id="data-points">--</span>
+                                    <span class="system-label">Data Points</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light theme">
+        <i class="fas fa-moon"></i>
+    </button>
     
     <div class="device-status">
         <div title="LiDAR Sensor">
@@ -40,101 +237,6 @@
             <i class="fas fa-temperature-high"></i>
         </div>
     </div>
-    
-    <div class="dashboard">
-        <div class="card quality-score">
-            <h2><i class="fas fa-chart-line"></i> Road Quality</h2>
-            <div class="quality-value" id="quality-value">--</div>
-            <div class="quality-label" id="quality-classification">--</div>
-            <canvas id="qualityGauge"></canvas>
-        </div>
-        
-        <div class="card acceleration">
-            <h2><i class="fas fa-tachometer-alt"></i> Accelerometer Data</h2>
-            <canvas id="accelChart"></canvas>
-        </div>
-        
-        <div class="card gps-data">
-            <h2><i class="fas fa-map-marker-alt"></i> GPS Position</h2>
-            <div id="gps-coordinates">
-                <div>Latitude: <span id="lat">--</span></div>
-                <div>Longitude: <span id="lon">--</span></div>
-                <div>Satellites: <span id="sats">--</span></div>
-                <div>Altitude: <span id="gps-alt">--</span> m</div>
-            </div>
-        </div>
-        
-        <div class="card events">
-            <h2><i class="fas fa-exclamation-triangle"></i> Road Events</h2>
-            <div id="events-list">
-                <div class="no-events">No events detected</div>
-            </div>
-        </div>
-        
-        <div class="card environmental">
-            <h2><i class="fas fa-cloud-sun"></i> Environmental Data</h2>
-            <div class="env-readings">
-                <div class="env-item">
-                    <div class="env-icon"><i class="fas fa-thermometer-half"></i></div>
-                    <div class="env-value" id="temperature">--</div>
-                    <div class="env-label">Temperature (°C)</div>
-                </div>
-                <div class="env-item">
-                    <div class="env-icon"><i class="fas fa-tint"></i></div>
-                    <div class="env-value" id="humidity">--</div>
-                    <div class="env-label">Humidity (%)</div>
-                </div>
-                <div class="env-item">
-                    <div class="env-icon"><i class="fas fa-wind"></i></div>
-                    <div class="env-value" id="pressure">--</div>
-                    <div class="env-label">Pressure (hPa)</div>
-                </div>
-                <div class="env-item">
-                    <div class="env-icon"><i class="fas fa-mountain"></i></div>
-                    <div class="env-value" id="altitude">--</div>
-                    <div class="env-label">Altitude (m)</div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card system-status">
-            <h2><i class="fas fa-server"></i> System Status</h2>
-            <div class="status-grid">
-                <div class="status-item">
-                    <div class="label">CPU Usage</div>
-                    <div class="value" id="cpu-usage">--</div>
-                </div>
-                <div class="status-item">
-                    <div class="label">Memory Usage</div>
-                    <div class="value" id="memory-usage">--</div>
-                </div>
-                <div class="status-item">
-                    <div class="label">Disk Space</div>
-                    <div class="value" id="disk-usage">--</div>
-                </div>
-                <div class="status-item">
-                    <div class="label">Network</div>
-                    <div class="value" id="network-status">--</div>
-                </div>
-                <div class="status-item">
-                    <div class="label">Uptime</div>
-                    <div class="value" id="uptime">--</div>
-                </div>
-                <div class="status-item">
-                    <div class="label">Data Points</div>
-                    <div class="value" id="data-points">--</div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light theme">
-        <i class="fas fa-moon"></i>
-    </button>
-    
-    <footer>
-        <p>Road Quality Measurement System | Raspberry Pi 5 | <span id="version">Version 1.2.0</span></p>
-    </footer>
     
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
     <script src="{{ url_for('static', filename='js/remote-access.js') }}"></script>
