@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     data: [0, 100],
                     backgroundColor: [
                         '#3498db',
-                        '#ecf0f1'
+                        'rgba(236, 240, 241, 0.5)' // More transparent background
                     ],
                     borderWidth: 0
                 }]
@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', function() {
             options: {
                 circumference: 180,
                 rotation: 270,
-                cutout: '80%',
+                cutout: '70%', // Smaller cutout for more visible gauge
                 plugins: {
                     legend: {
                         display: false
@@ -123,19 +123,22 @@ document.addEventListener('DOMContentLoaded', function() {
         const qualityValue = document.getElementById('quality-value');
         const qualityClass = document.getElementById('quality-classification');
         
-        if (data.lidar_quality) {
+        if (data.lidar_quality !== undefined) {
             qualityValue.textContent = data.lidar_quality.toFixed(1) + '/100';
             qualityClass.textContent = data.classification;
             
-            // Set color based on quality
+            // Set color based on quality with improved contrast
             if (data.lidar_quality >= 75) {
                 qualityValue.style.color = '#2ecc71';
+                qualityClass.style.color = '#2ecc71';
                 qualityGauge.data.datasets[0].backgroundColor[0] = '#2ecc71';
             } else if (data.lidar_quality >= 50) {
-                qualityValue.style.color = '#f39c12';
+                qualityValue.style.color = '#f5d742'; // More visible yellow
+                qualityClass.style.color = '#f5d742';
                 qualityGauge.data.datasets[0].backgroundColor[0] = '#f39c12';
             } else {
-                qualityValue.style.color = '#e74c3c';
+                qualityValue.style.color = '#ff6b6b'; // Brighter red
+                qualityClass.style.color = '#ff6b6b';
                 qualityGauge.data.datasets[0].backgroundColor[0] = '#e74c3c';
             }
             
@@ -172,6 +175,14 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data.gps && data.gps.lat !== 0 && data.gps.lon !== 0) {
             document.getElementById('lat').textContent = data.gps.lat.toFixed(6);
             document.getElementById('lon').textContent = data.gps.lon.toFixed(6);
+            
+            // Add support for other GPS data if available
+            if (data.gps.satellites) {
+                document.getElementById('sats').textContent = data.gps.satellites;
+            }
+            if (data.gps.altitude) {
+                document.getElementById('gps-alt').textContent = data.gps.altitude + " m";
+            }
         }
         
         // Update environmental data
