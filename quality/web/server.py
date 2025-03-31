@@ -6,6 +6,7 @@ import time
 import logging
 import json
 import os
+import socket
 
 logger = logging.getLogger("WebServer")
 
@@ -26,14 +27,37 @@ class RoadQualityWebServer:
         self.app = Flask(__name__, 
                          static_folder='static',
                          template_folder='templates')
-        self.socketio = SocketIO(self.app, cors_allowed_origins="*", async_mode='threading')
+        
+        # Enhanced socketio configuration with more robust error handling
+        self.socketio = SocketIO(
+            self.app, 
+            cors_allowed_origins="*", 
+            async_mode='threading',
+            logger=False,  # Disable socketio logger
+            engineio_logger=False,  # Disable engineio logger 
+            ping_timeout=20,
+            ping_interval=25
+        )
+        
         self.sensor_fusion = sensor_fusion
         self.config = config
         self.host = host
-        self.port = port
+        self.port = self._find_available_port(port)  # Find an available port if default is taken
         self.running = False
         self.thread = None
         self.connected_clients = 0
+        
+        # Add these lines to disable werkzeug request logs
+        log = logging.getLogger('werkzeug')
+        log.setLevel(logging.ERROR)  # Only show errors, not INFO messages
+        
+        # Disable Flask's default logging of requests
+        self.app.logger.disabled = True
+        logging.getLogger('werkzeug').disabled = True
+        
+        # Disable ngrok logs as well
+        logging.getLogger('pyngrok').setLevel(logging.ERROR)
+        logging.getLogger('pyngrok.process').setLevel(logging.ERROR)
         
         # Ngrok tunnel
         self.ngrok_tunnel = None
@@ -43,29 +67,74 @@ class RoadQualityWebServer:
         # Register socket events
         self.register_socket_events()
         
-        logger.info(f"Web server initialized on http://{host}:{port}/")
+        logger.info(f"Web server initialized on http://{host}:{self.port}/")
         
         # Initialize ngrok if enabled
         if getattr(self.config, 'ENABLE_NGROK', False) and NGROK_AVAILABLE:
             self.setup_ngrok()
     
+    def _find_available_port(self, preferred_port):
+        """Find an available port, starting with the preferred one"""
+        port = preferred_port
+        max_attempts = 10
+        
+        for attempt in range(max_attempts):
+            try:
+                # Try to create a socket on the port
+                test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                test_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                test_socket.bind((self.host, port))
+                test_socket.close()
+                logger.info(f"Port {port} is available")
+                return port
+            except socket.error:
+                logger.warning(f"Port {port} is in use, trying port {port+1}")
+                port += 1
+        
+        # If we get here, just return the last port we tried
+        logger.warning(f"Could not find available port after {max_attempts} attempts. Using port {port}")
+        return port
+
     def setup_ngrok(self):
         """Set up ngrok tunnel for remote access"""
         try:
+            # Check if pyngrok is installed
+            import importlib
+            spec = importlib.util.find_spec('pyngrok')
+            if spec is None:
+                logger.error("pyngrok module not installed. Run: pip install pyngrok")
+                print("\n" + "=" * 80)
+                print("⚠️  REMOTE ACCESS ERROR: pyngrok module not installed")
+                print("   To enable remote access, install pyngrok:")
+                print("   pip install pyngrok")
+                print("=" * 80 + "\n")
+                return
+                
             if not check_ngrok_installed():
-                logger.warning("Ngrok not available. To enable remote access, install pyngrok: pip install pyngrok")
+                logger.error("ngrok executable not found. Install it using pyngrok")
+                print("\n" + "=" * 80)
+                print("⚠️  REMOTE ACCESS ERROR: ngrok executable not found")
+                print("   Try installing it with:")
+                print("   python -c 'from pyngrok import ngrok; ngrok.install_ngrok()'")
+                print("=" * 80 + "\n")
                 return
                 
             logger.info(f"Setting up ngrok tunnel (version: {get_ngrok_version()})...")
             
-            # Create tunnel
+            # Create tunnel with the correct port
             self.ngrok_tunnel = NgrokTunnel(
-                port=self.port,
+                port=self.port,  # Use the actual port we're running on
                 auth_token=getattr(self.config, 'NGROK_AUTH_TOKEN', None),
                 region=getattr(self.config, 'NGROK_REGION', 'us')
             )
+            
+            logger.info("Ngrok tunnel setup complete and ready to start")
+            
         except Exception as e:
             logger.error(f"Error setting up ngrok: {e}")
+            print("\n" + "=" * 80)
+            print(f"⚠️  REMOTE ACCESS ERROR: {e}")
+            print("=" * 80 + "\n")
     
     def register_routes(self):
         """Register HTTP routes"""
@@ -212,36 +281,63 @@ class RoadQualityWebServer:
         self.thread.start()
         
         # Start ngrok tunnel if available - Do this BEFORE starting the Flask server
+        ngrok_started = False
         if self.ngrok_tunnel:
             # Try multiple times to establish the tunnel
-            for attempt in range(3):
-                logger.info(f"Starting ngrok tunnel (attempt {attempt+1}/3)...")
-                if self.ngrok_tunnel.start():
-                    logger.info(f"✅ Remote access URL: {self.ngrok_tunnel.public_url}")
-                    # Print QR code URL for easy mobile access
-                    qr_url = f"https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl={self.ngrok_tunnel.public_url}"
-                    logger.info(f"📱 Scan QR code to access: {qr_url}")
-                    
-                    # Add this to make it very visible in the console
-                    print("\n" + "=" * 80)
-                    print(f"🌐 REMOTE ACCESS URL: {self.ngrok_tunnel.public_url}")
-                    print(f"📱 SCAN QR CODE: {qr_url}")
-                    print("=" * 80 + "\n")
-                    
-                    break
-                else:
-                    logger.warning(f"Failed to start ngrok tunnel on attempt {attempt+1}")
-                    time.sleep(2)  # Wait before retry
-            else:
+            retry_count = getattr(self.config, 'NGROK_RETRY_COUNT', 3)
+            retry_delay = getattr(self.config, 'NGROK_RETRY_DELAY', 2)
+            
+            for attempt in range(retry_count):
+                logger.info(f"Starting ngrok tunnel (attempt {attempt+1}/{retry_count})...")
+                try:
+                    if self.ngrok_tunnel.start():
+                        logger.info(f"✅ Remote access URL: {self.ngrok_tunnel.public_url}")
+                        # Print QR code URL for easy mobile access
+                        qr_url = f"https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl={self.ngrok_tunnel.public_url}"
+                        logger.info(f"📱 Scan QR code to access: {qr_url}")
+                        
+                        # Add this to make it very visible in the console
+                        print("\n" + "=" * 80)
+                        print(f"🌐 REMOTE ACCESS URL: {self.ngrok_tunnel.public_url}")
+                        print(f"📱 SCAN QR CODE: {qr_url}")
+                        print("=" * 80 + "\n")
+                        
+                        ngrok_started = True
+                        break
+                    else:
+                        logger.warning(f"Failed to start ngrok tunnel on attempt {attempt+1}")
+                except Exception as e:
+                    logger.error(f"Error starting ngrok tunnel: {e}")
+                
+                time.sleep(retry_delay)  # Wait before retry
+                
+            if not ngrok_started:
                 logger.error("Failed to start ngrok tunnel after multiple attempts")
+                print("\n" + "=" * 80)
+                print("⚠️  REMOTE ACCESS ERROR: Failed to start ngrok tunnel")
+                print("   Check logs for more details")
+                print("=" * 80 + "\n")
         
         # Start web server
         logger.info(f"Starting web server on http://{self.host}:{self.port}/")
         try:
-            self.socketio.run(self.app, host=self.host, port=self.port, 
-                              debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
-        except Exception as e:
+            # Use try/except to catch socket errors
+            self.socketio.run(
+                self.app, 
+                host=self.host, 
+                port=self.port, 
+                debug=False, 
+                use_reloader=False, 
+                log_output=False,  # Disable SocketIO logging
+                allow_unsafe_werkzeug=True
+            )
+        except OSError as e:
             logger.error(f"Error starting web server: {e}")
+            if "Address already in use" in str(e):
+                logger.error(f"Port {self.port} is already in use. Try changing the port in config.")
+            self.running = False
+        except Exception as e:
+            logger.error(f"Unexpected error starting web server: {e}")
             self.running = False
     
     def stop(self):

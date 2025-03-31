@@ -24,6 +24,7 @@ if __name__ == "__main__":
     from quality.analysis import RoadQualityAnalyzer
     from quality.core.context_managers import lidar_device_context, serial_port_context, i2c_bus_context
     from quality.web.server import RoadQualityWebServer
+    from quality.logging_config import configure_logging  # Add this import
 else:
     # Use relative imports when imported as a module
     from ..config import Config
@@ -34,12 +35,14 @@ else:
     from ..analysis import RoadQualityAnalyzer
     from .context_managers import lidar_device_context, serial_port_context, i2c_bus_context
     from ..web.server import RoadQualityWebServer
+    from ..logging_config import configure_logging  # Add this import
 
 # Fix Wayland error
 os.environ["QT_QPA_PLATFORM"] = "xcb"  # Use X11 instead of Wayland
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+configure_logging()  # Add this line to silence werkzeug and other libraries
 logger = logging.getLogger("SensorFusion")
 
 class SensorFusion:

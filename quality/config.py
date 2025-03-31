@@ -46,13 +46,19 @@ class Config:
     
     # Web server settings
     WEB_SERVER_HOST = '0.0.0.0'  # Listen on all interfaces
-    WEB_SERVER_PORT = 8080
-    WEB_UPDATE_INTERVAL = 200  # WebSocket update interval in ms (reduced for more responsive updates)
+    WEB_SERVER_PORT = 8080       # Default port (will try next available if busy)
+    WEB_UPDATE_INTERVAL = 200    # Update interval in milliseconds
+    
+    # Web server advanced options
+    WEB_CONNECTION_TIMEOUT = 30  # Socket connection timeout in seconds
+    WEB_MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max upload size
     
     # Ngrok remote access settings
-    ENABLE_NGROK = True  # Enable ngrok remote access
-    NGROK_AUTH_TOKEN = "1kHCNihdSF75RXdZOaII8jNdwLr_2F83BK8kuB8vBP4otk8Y7"  # Your ngrok auth token (None for free usage)
+    ENABLE_NGROK = True  # Enable by default
+    NGROK_AUTH_TOKEN = "1kHCNihdSF75RXdZOaII8jNdwLr_2F83BK8kuB8vBP4otk8Y7"  # Your ngrok auth token if you have one
     NGROK_REGION = "eu"  # Ngrok region: us, eu, ap, au, sa, jp, in
+    NGROK_RETRY_COUNT = 3  # Number of times to retry starting ngrok
+    NGROK_RETRY_DELAY = 2  # Seconds to wait between retries
     
     # AHT21 Temperature/Humidity sensor settings
     AHT21_ADDRESS = 0x38
