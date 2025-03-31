@@ -17,6 +17,9 @@ except ImportError:
     logger.warning("Ngrok helper module not found. Remote access will not be available.")
     NGROK_AVAILABLE = False
 
+# Import the system monitor
+from .system_monitor import get_system_status
+
 class RoadQualityWebServer:
     def __init__(self, sensor_fusion, config, host='0.0.0.0', port=8080):
         """Initialize the web server with access to sensor data"""
@@ -88,6 +91,20 @@ class RoadQualityWebServer:
                 }
             return flask.jsonify(data)
         
+        @self.app.route('/api/system')
+        def get_system_status_api():
+            """API endpoint to get system status information"""
+            status_data = get_system_status()
+            
+            # Add data points information
+            status_data['data_points'] = {
+                'accel': len(self.sensor_fusion.accel_data),
+                'lidar': len(self.sensor_fusion.lidar_data),
+                'gps': len(self.sensor_fusion.analyzer.gps_quality_history) if hasattr(self.sensor_fusion.analyzer, 'gps_quality_history') else 0
+            }
+            
+            return flask.jsonify(status_data)
+        
         @self.app.route('/remote_access')
         def remote_access():
             """Display ngrok tunnel information"""
@@ -103,6 +120,12 @@ class RoadQualityWebServer:
                 'tunnel_url': tunnel_url,
                 'local_url': f"http://{self.host}:{self.port}/",
             })
+        
+        # Add a handler for the removed GPS map
+        @self.app.route('/gps_position.html')
+        def gps_position_redirect():
+            """Redirect to home for removed GPS map file"""
+            return flask.redirect('/')
     
     def register_socket_events(self):
         """Register WebSocket event handlers"""

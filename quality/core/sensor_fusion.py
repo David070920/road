@@ -120,8 +120,11 @@ class SensorFusion:
         # Add web server
         self.web_server = None
         
-        # Log the map file location
-        logger.info(f"GPS map will be saved to: {self.config.MAP_HTML_PATH}")
+        # Log the map file location only if GPS map is enabled
+        if getattr(self.config, 'ENABLE_GPS_MAP', False) and hasattr(self.config, 'MAP_HTML_PATH'):
+            logger.info(f"GPS map will be saved to: {self.config.MAP_HTML_PATH}")
+        else:
+            logger.info("GPS map generation is disabled")
 
     def initialize_devices(self):
         """Initialize all the devices"""
@@ -403,20 +406,28 @@ class SensorFusion:
             self.gps_serial_port = gps
             self.i2c_bus = i2c
             
-            # Create default map before starting threads
-            create_default_map(self.config)
+            # Skip map creation if disabled
+            if getattr(self.config, 'ENABLE_GPS_MAP', False):
+                create_default_map(self.config)
             
             self.start_threads()
             
             try:
-                logger.info("Setting up visualization...")
-                self.fig_lidar, self.fig_accel, self.lidar_ani, self.accel_ani = setup_visualization(
-                    self.lidar_data, self.lidar_data_lock, 
-                    self.accel_data, self.accel_data_lock, 
-                    self.config,
-                    self.analyzer,
-                    self.analysis_lock
-                )
+                # Only setup visualization if enabled in config
+                if self.config.ENABLE_VISUALIZATION:
+                    logger.info("Setting up visualization...")
+                    self.fig_lidar, self.fig_accel, self.lidar_ani, self.accel_ani = setup_visualization(
+                        self.lidar_data, self.lidar_data_lock, 
+                        self.accel_data, self.accel_data_lock, 
+                        self.config,
+                        self.analyzer,
+                        self.analysis_lock
+                    )
+                    # Show the figures but don't block
+                    plt.ioff()  # Use plt.ioff() to avoid keeping windows always on top
+                    plt.show(block=False)
+                else:
+                    logger.info("Visualization disabled in configuration")
                 
                 # Initialize and start the web server
                 self.web_server = RoadQualityWebServer(
@@ -429,25 +440,25 @@ class SensorFusion:
                 web_thread.start()
                 logger.info(f"Web interface available at http://{self.config.WEB_SERVER_HOST}:{self.config.WEB_SERVER_PORT}")
                 
-                # Try to open the map in browser
-                try:
-                    map_url = 'file://' + os.path.abspath(self.config.MAP_HTML_PATH)
-                    logger.info(f"Opening map at: {map_url}")
-                    if webbrowser.open(map_url):
-                        logger.info("Map opened in browser")
-                    else:
-                        logger.warning("Failed to open browser, but map file was created")
-                except Exception as e:
-                    logger.error(f"Error opening map in browser: {e}")
-                
-                # Use plt.ioff() to avoid keeping windows always on top
-                plt.ioff()
-                # Show the figures but don't block
-                plt.show(block=False)
+                # Skip map opening if disabled
+                if getattr(self.config, 'ENABLE_GPS_MAP', False):
+                    # Try to open the map in browser
+                    try:
+                        map_url = 'file://' + os.path.abspath(self.config.MAP_HTML_PATH)
+                        logger.info(f"Opening map at: {map_url}")
+                        if webbrowser.open(map_url):
+                            logger.info("Map opened in browser")
+                        else:
+                            logger.warning("Failed to open browser, but map file was created")
+                    except Exception as e:
+                        logger.error(f"Error opening map in browser: {e}")
                 
                 # Keep the main thread alive but responsive to signals
                 while not self.stop_event.is_set():
-                    plt.pause(0.1)  # Update plots while allowing other operations
+                    if self.config.ENABLE_VISUALIZATION:
+                        plt.pause(0.1)  # Update plots while allowing other operations
+                    else:
+                        time.sleep(0.1)  # Just sleep when visualization is disabled
                     
             except Exception as e:
                 logger.error(f"Error in visualization: {e}", exc_info=True)

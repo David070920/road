@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', function() {
         timeout: 20000
     });
     
+    // Make socket globally available for other scripts
+    window.socket = socket;
+    
     let accelChart = null;
     let qualityGauge = null;
     let connectionStatus = 'connecting';
@@ -80,6 +83,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         title: {
                             display: true,
                             text: 'Acceleration (g)'
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
                         }
                     },
                     x: {
@@ -137,6 +143,9 @@ document.addEventListener('DOMContentLoaded', function() {
             qualityGauge.data.datasets[0].data[0] = data.lidar_quality;
             qualityGauge.data.datasets[0].data[1] = 100 - data.lidar_quality;
             qualityGauge.update('none'); // Use 'none' mode for smoother updates
+            
+            // Update document title with quality score
+            document.title = `Road Quality: ${data.lidar_quality.toFixed(1)}/100 | Dashboard`;
         }
         
         // Update accelerometer chart
@@ -248,6 +257,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 const eventsList = document.getElementById('events-list');
                 
                 if (data.events && data.events.length > 0) {
+                    // Find existing events to determine which ones are new
+                    const existingEvents = Array.from(eventsList.querySelectorAll('.event-item'))
+                        .map(item => item.getAttribute('data-timestamp'));
+                    
                     // Clear the "no events" message
                     eventsList.innerHTML = '';
                     
@@ -255,10 +268,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     data.events.forEach(event => {
                         const eventItem = document.createElement('div');
                         eventItem.className = `event-item event-${event.type.toLowerCase()}`;
+                        eventItem.setAttribute('data-timestamp', event.timestamp);
+                        
+                        // Check if this is a new event
+                        if (!existingEvents.includes(event.timestamp)) {
+                            eventItem.classList.add('new-event');
+                        }
                         
                         const timestamp = new Date(event.timestamp).toLocaleTimeString();
+                        let icon = event.type === 'Pothole' ? 'fa-triangle-exclamation' : 'fa-hill-rockslide';
+                        
                         eventItem.innerHTML = `
-                            <div class="event-title">${event.type} (Severity: ${event.severity})</div>
+                            <div class="event-title">
+                                <i class="fas ${icon}"></i> ${event.type} (Severity: ${event.severity})
+                            </div>
                             <div class="event-details">
                                 Magnitude: ${event.magnitude.toFixed(3)}g<br>
                                 Time: ${timestamp}

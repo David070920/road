@@ -9,6 +9,15 @@ logger = logging.getLogger("SensorFusion")
 
 def update_gps_map(gps_data, config, analyzer=None):
     """Update the GPS position on a Folium map and save as HTML"""
+    # Skip if GPS map is disabled
+    if not getattr(config, 'ENABLE_GPS_MAP', False):
+        return
+        
+    # Check if MAP_HTML_PATH is defined
+    if not hasattr(config, 'MAP_HTML_PATH'):
+        logger.warning("MAP_HTML_PATH not defined in config, skipping map update")
+        return
+        
     try:
         with gps_data["lock"]:
             lat = gps_data["lat"]
@@ -226,6 +235,15 @@ def update_gps_map(gps_data, config, analyzer=None):
 
 def create_default_map(config):
     """Create a default map if no GPS data is available yet"""
+    # Skip if GPS map is disabled
+    if not getattr(config, 'ENABLE_GPS_MAP', False):
+        return
+        
+    # Check if MAP_HTML_PATH is defined
+    if not hasattr(config, 'MAP_HTML_PATH'):
+        logger.warning("MAP_HTML_PATH not defined in config, skipping default map creation")
+        return
+        
     try:
         # Create a map centered at a default location (0, 0 or another predefined location)
         m = folium.Map(location=[0, 0], zoom_start=2)

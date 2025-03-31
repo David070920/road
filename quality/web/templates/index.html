@@ -5,81 +5,139 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Road Quality Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+    <div class="loading">
+        <div class="spinner"></div>
+    </div>
+    
     <header>
-        <h1>Road Quality Analysis Dashboard</h1>
+        <h1><i class="fas fa-road"></i> Road Quality Analysis Dashboard</h1>
         <div class="user-info">
-            <span>User: {{ user_info }}</span>
-            <span>Session: {{ session_time }}</span>
+            <span><i class="fas fa-user"></i> User: {{ user_info }}</span>
+            <span><i class="fas fa-clock"></i> Session: {{ session_time }}</span>
         </div>
     </header>
     
+    <div class="device-status">
+        <div title="LiDAR Sensor">
+            <span class="device" id="lidar-status"></span>
+            <i class="fas fa-radar"></i>
+        </div>
+        <div title="Accelerometer">
+            <span class="device" id="accel-status"></span>
+            <i class="fas fa-tachometer-alt"></i>
+        </div>
+        <div title="GPS">
+            <span class="device" id="gps-status"></span>
+            <i class="fas fa-satellite"></i>
+        </div>
+        <div title="Environmental Sensors">
+            <span class="device" id="env-status"></span>
+            <i class="fas fa-temperature-high"></i>
+        </div>
+    </div>
+    
     <div class="dashboard">
         <div class="card quality-score">
-            <h2>Road Quality</h2>
+            <h2><i class="fas fa-chart-line"></i> Road Quality</h2>
             <div class="quality-value" id="quality-value">--</div>
             <div class="quality-label" id="quality-classification">--</div>
             <canvas id="qualityGauge"></canvas>
         </div>
         
         <div class="card acceleration">
-            <h2>Accelerometer Data</h2>
+            <h2><i class="fas fa-tachometer-alt"></i> Accelerometer Data</h2>
             <canvas id="accelChart"></canvas>
         </div>
         
         <div class="card gps-data">
-            <h2>GPS Position</h2>
+            <h2><i class="fas fa-map-marker-alt"></i> GPS Position</h2>
             <div id="gps-coordinates">
                 <div>Latitude: <span id="lat">--</span></div>
                 <div>Longitude: <span id="lon">--</span></div>
-            </div>
-            <div class="view-map">
-                <a href="/gps_position.html" target="_blank">View Full Map</a>
+                <div>Satellites: <span id="sats">--</span></div>
+                <div>Altitude: <span id="gps-alt">--</span> m</div>
             </div>
         </div>
         
         <div class="card events">
-            <h2>Road Events</h2>
+            <h2><i class="fas fa-exclamation-triangle"></i> Road Events</h2>
             <div id="events-list">
                 <div class="no-events">No events detected</div>
             </div>
         </div>
         
         <div class="card environmental">
-            <h2>Environmental Data</h2>
+            <h2><i class="fas fa-cloud-sun"></i> Environmental Data</h2>
             <div class="env-readings">
                 <div class="env-item">
-                    <div class="env-icon">🌡️</div>
+                    <div class="env-icon"><i class="fas fa-thermometer-half"></i></div>
                     <div class="env-value" id="temperature">--</div>
                     <div class="env-label">Temperature (°C)</div>
                 </div>
                 <div class="env-item">
-                    <div class="env-icon">💧</div>
+                    <div class="env-icon"><i class="fas fa-tint"></i></div>
                     <div class="env-value" id="humidity">--</div>
                     <div class="env-label">Humidity (%)</div>
                 </div>
                 <div class="env-item">
-                    <div class="env-icon">🔄</div>
+                    <div class="env-icon"><i class="fas fa-wind"></i></div>
                     <div class="env-value" id="pressure">--</div>
                     <div class="env-label">Pressure (hPa)</div>
                 </div>
                 <div class="env-item">
-                    <div class="env-icon">🏔️</div>
+                    <div class="env-icon"><i class="fas fa-mountain"></i></div>
                     <div class="env-value" id="altitude">--</div>
                     <div class="env-label">Altitude (m)</div>
                 </div>
             </div>
         </div>
+        
+        <div class="card system-status">
+            <h2><i class="fas fa-server"></i> System Status</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <div class="label">CPU Usage</div>
+                    <div class="value" id="cpu-usage">--</div>
+                </div>
+                <div class="status-item">
+                    <div class="label">Memory Usage</div>
+                    <div class="value" id="memory-usage">--</div>
+                </div>
+                <div class="status-item">
+                    <div class="label">Disk Space</div>
+                    <div class="value" id="disk-usage">--</div>
+                </div>
+                <div class="status-item">
+                    <div class="label">Network</div>
+                    <div class="value" id="network-status">--</div>
+                </div>
+                <div class="status-item">
+                    <div class="label">Uptime</div>
+                    <div class="value" id="uptime">--</div>
+                </div>
+                <div class="status-item">
+                    <div class="label">Data Points</div>
+                    <div class="value" id="data-points">--</div>
+                </div>
+            </div>
+        </div>
     </div>
     
+    <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light theme">
+        <i class="fas fa-moon"></i>
+    </button>
+    
     <footer>
-        <p>Road Quality Measurement System | Raspberry Pi 5</p>
+        <p>Road Quality Measurement System | Raspberry Pi 5 | <span id="version">Version 1.2.0</span></p>
     </footer>
     
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
     <script src="{{ url_for('static', filename='js/remote-access.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ui-enhancements.js') }}"></script>
 </body>
 </html>

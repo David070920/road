@@ -4,17 +4,18 @@ import logging
 
 logger = logging.getLogger("SensorFusion")
 
-def gps_thread_func(gps_serial_port, gps_data_lock, gps_data, stop_event, config, update_gps_map, sensor_instance):
-    """Thread function for GPS data acquisition"""
+def gps_thread_func(serial_port, gps_data_lock, gps_data, stop_event, config, map_update_func=None, sensor_fusion=None):
+    """Thread function for GPS acquisition"""
     logger.info("GPS thread started")
+    last_map_update = 0
     while not stop_event.is_set():
         try:
-            if gps_serial_port is None:
+            if serial_port is None:
                 time.sleep(0.2)
                 continue
                 
             # Fetch the GPS data
-            raw_data = gps_serial_port.readline().decode().strip()
+            raw_data = serial_port.readline().decode().strip()
             
             if raw_data.find('GGA') > 0:
                 gps_message = pynmea2.parse(raw_data)
@@ -31,10 +32,14 @@ def gps_thread_func(gps_serial_port, gps_data_lock, gps_data, stop_event, config
                 
                 # Check if it's time to update the map
                 current_time = time.time()
-                if current_time - sensor_instance.last_map_update >= config.GPS_MAP_UPDATE_INTERVAL:
-                    # Pass the analyzer to the map update function
-                    update_gps_map(gps_data, config, getattr(sensor_instance, 'analyzer', None))
-                    sensor_instance.last_map_update = current_time
+                if (map_update_func is not None and 
+                    current_time - last_map_update >= config.GPS_MAP_UPDATE_INTERVAL and
+                    getattr(config, 'ENABLE_GPS_MAP', False)):
+                    last_map_update = current_time
+                    try:
+                        map_update_func(gps_data, config, sensor_fusion.analyzer if sensor_fusion else None)
+                    except Exception as e:
+                        logger.error(f"Error updating GPS map: {e}")
                 
                 logger.info(f"GPS: {gps_data}")
                 

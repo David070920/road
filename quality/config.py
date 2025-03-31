@@ -11,6 +11,11 @@ class Config:
     ACCEL_UPDATE_INTERVAL = 300  # Accelerometer visualization update interval in ms
     MAX_FRAME_SKIP = 2     # Maximum number of frames to skip for smoother rendering
     
+    # Visualization settings
+    ENABLE_VISUALIZATION = False  # Master switch to enable/disable all visualization graphs
+    ENABLE_LIDAR_GRAPH = True    # Enable/disable LiDAR visualization
+    ENABLE_ACCEL_GRAPH = True    # Enable/disable accelerometer visualization
+    
     # User and system information
     USER_LOGIN = "David070920"
     SYSTEM_START_TIME = "2025-03-29 11:17:21"
@@ -36,7 +41,7 @@ class Config:
     ICM20948_ACCEL_ZOUT_H = 0x31
     
     # Folium map settings
-    MAP_HTML_PATH = os.path.join(str(Path.home()), "gps_position.html")
+    ENABLE_GPS_MAP = False  # Disable external GPS map HTML file
     MAP_ZOOM_START = 15
     
     # Web server settings
