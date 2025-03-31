@@ -165,6 +165,22 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('lon').textContent = data.gps.lon.toFixed(6);
         }
         
+        // Update environmental data
+        if (data.env) {
+            if (data.env.temperature !== null) {
+                document.getElementById('temperature').textContent = data.env.temperature + "°C";
+            }
+            if (data.env.humidity !== null) {
+                document.getElementById('humidity').textContent = data.env.humidity + "%";
+            }
+            if (data.env.pressure !== null) {
+                document.getElementById('pressure').textContent = data.env.pressure + " hPa";
+            }
+            if (data.env.altitude !== null) {
+                document.getElementById('altitude').textContent = data.env.altitude + " m";
+            }
+        }
+        
         // Update events immediately instead of waiting for interval
         updateEvents();
     });

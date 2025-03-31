@@ -48,3 +48,22 @@ class Config:
     ENABLE_NGROK = True  # Enable ngrok remote access
     NGROK_AUTH_TOKEN = "1kHCNihdSF75RXdZOaII8jNdwLr_2F83BK8kuB8vBP4otk8Y7"  # Your ngrok auth token (None for free usage)
     NGROK_REGION = "eu"  # Ngrok region: us, eu, ap, au, sa, jp, in
+    
+    # AHT21 Temperature/Humidity sensor settings
+    AHT21_ADDRESS = 0x38
+    AHT21_INIT_COMMAND = [0xBE, 0x08, 0x00]
+    AHT21_MEASURE_COMMAND = [0xAC, 0x33, 0x00]
+    AHT21_RESET_COMMAND = 0xBA
+    
+    # BMX280 Pressure/Temperature sensor settings
+    BMX280_ADDRESS = 0x77  # Can be 0x76 or 0x77, check your specific module
+    BMX280_RESET_REGISTER = 0xE0
+    BMX280_RESET_VALUE = 0xB6
+    BMX280_CTRL_MEAS_REGISTER = 0xF4
+    BMX280_CONFIG_REGISTER = 0xF5
+    BMX280_PRESSURE_REGISTER = 0xF7
+    BMX280_TEMP_REGISTER = 0xFA
+    BMX280_CALIB_REGISTER = 0x88
+    
+    # Environmental data update interval (in seconds)
+    ENV_UPDATE_INTERVAL = 2.0  # Update every 2 seconds to avoid unnecessary frequent readings

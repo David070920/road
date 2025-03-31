@@ -116,6 +116,26 @@ def update_gps_map(gps_data, config, analyzer=None):
                             tooltip=f"{quality_cat.title()} Road Quality"
                         ).add_to(m)
         
+        # Add environmental data if available
+        env_info = ""
+        if hasattr(analyzer, 'sensor_fusion') and hasattr(analyzer.sensor_fusion, 'env_data'):
+            env_data = analyzer.sensor_fusion.env_data
+            if env_data.get('temperature') is not None:
+                env_info += f"Temperature: {env_data['temperature']}°C<br>"
+            if env_data.get('humidity') is not None:
+                env_info += f"Humidity: {env_data['humidity']}%<br>"
+            if env_data.get('pressure') is not None:
+                env_info += f"Pressure: {env_data['pressure']} hPa<br>"
+            if env_data.get('altitude') is not None:
+                env_info += f"Est. Altitude: {env_data['altitude']} m<br>"
+            
+            if env_info:
+                env_info = f"""
+                <b>Environmental Data</b><br>
+                {env_info}
+                <hr>
+                """
+        
         # Add a marker for the current position
         popup_text = f"""
         <b>GPS Data</b><br>
@@ -124,8 +144,9 @@ def update_gps_map(gps_data, config, analyzer=None):
         Altitude: {alt} m<br>
         Satellites: {sats}<br>
         Time: {timestamp}<br>
-        {quality_info}
         <hr>
+        {quality_info}
+        {env_info}
         User: {config.USER_LOGIN}<br>
         Session: {config.SYSTEM_START_TIME}
         """

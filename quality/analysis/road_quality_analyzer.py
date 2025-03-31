@@ -8,8 +8,9 @@ import time
 logger = logging.getLogger("SensorFusion")
 
 class RoadQualityAnalyzer:
-    def __init__(self, config):
+    def __init__(self, config, sensor_fusion=None):
         self.config = config
+        self.sensor_fusion = sensor_fusion  # Store reference to SensorFusion instance
         
         # Store detected events with timestamps and GPS coordinates
         self.events = []

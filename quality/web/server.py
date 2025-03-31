@@ -137,6 +137,13 @@ class RoadQualityWebServer:
                     'gps': {
                         'lat': self.sensor_fusion.gps_data['lat'],
                         'lon': self.sensor_fusion.gps_data['lon']
+                    },
+                    # Add environmental data
+                    'env': {
+                        'temperature': self.sensor_fusion.env_data['temperature'],
+                        'humidity': self.sensor_fusion.env_data['humidity'],
+                        'pressure': self.sensor_fusion.env_data['pressure'],
+                        'altitude': self.sensor_fusion.env_data['altitude']
                     }
                 }
             # Only emit if there are connected clients to save resources

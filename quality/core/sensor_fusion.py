@@ -17,8 +17,8 @@ if __name__ == "__main__":
     
     # Use absolute imports when run directly
     from quality.config import Config
-    from quality.hardware import initialize_i2c, initialize_lidar, initialize_gps, initialize_icm20948
-    from quality.acquisition import lidar_thread_func, gps_thread_func, accel_thread_func
+    from quality.hardware import initialize_i2c, initialize_lidar, initialize_gps, initialize_icm20948, initialize_aht21, initialize_bmx280
+    from quality.acquisition import lidar_thread_func, gps_thread_func, accel_thread_func, env_thread_func
     from quality.visualization import setup_visualization
     from quality.io.gps_utils import update_gps_map, create_default_map
     from quality.analysis import RoadQualityAnalyzer
@@ -27,8 +27,8 @@ if __name__ == "__main__":
 else:
     # Use relative imports when imported as a module
     from ..config import Config
-    from ..hardware import initialize_i2c, initialize_lidar, initialize_gps, initialize_icm20948
-    from ..acquisition import lidar_thread_func, gps_thread_func, accel_thread_func
+    from ..hardware import initialize_i2c, initialize_lidar, initialize_gps, initialize_icm20948, initialize_aht21, initialize_bmx280
+    from ..acquisition import lidar_thread_func, gps_thread_func, accel_thread_func, env_thread_func
     from ..visualization import setup_visualization
     from ..io.gps_utils import update_gps_map, create_default_map
     from ..analysis import RoadQualityAnalyzer
@@ -65,17 +65,32 @@ class SensorFusion:
         self.gps_data = {"timestamp": None, "lat": 0, "lon": 0, "alt": 0, "sats": 0, "lock": self.gps_data_lock}
         self.last_map_update = 0
         
+        # Add environmental data structure
+        self.env_data_lock = threading.RLock()
+        self.env_data = {
+            'temperature': None,
+            'humidity': None,
+            'pressure': None,
+            'altitude': None,
+            'temperature_timestamp': 0,
+            'pressure_timestamp': 0
+        }
+        
+        # Add a condition for signaling when new environmental data is available
+        self.env_data_condition = threading.Condition(self.env_data_lock)
+        
         # Add a data snapshot attribute to avoid full copies
         self.data_snapshot = {
             'lidar': None,
             'accel': None,
             'gps': None,
+            'env': None,  # Add environmental data to snapshot
             'timestamp': 0
         }
         self.snapshot_lock = threading.RLock()
         
         # Use RLock for the analyzer to allow recursive acquisition
-        self.analyzer = RoadQualityAnalyzer(self.config)
+        self.analyzer = RoadQualityAnalyzer(self.config, self)
         self.analysis_lock = threading.RLock()
         
         # Add GPS quality history for heatmap
@@ -127,12 +142,20 @@ class SensorFusion:
         if not initialize_icm20948(self.i2c_bus, self.config):
             logger.warning("Failed to initialize ICM20948. Continuing without accelerometer data.")
         
+        # Initialize AHT21 temperature/humidity sensor
+        if not initialize_aht21(self.i2c_bus, self.config):
+            logger.warning("Failed to initialize AHT21 sensor. Continuing without temperature/humidity data.")
+        
+        # Initialize BMX280 pressure/temperature sensor
+        if not initialize_bmx280(self.i2c_bus, self.config):
+            logger.warning("Failed to initialize BMX280 sensor. Continuing without pressure data.")
+        
         return True
 
     def start_threads(self):
         """Start data acquisition threads using a thread pool"""
         # Create a thread pool with appropriate number of workers
-        self.thread_pool = ThreadPoolExecutor(max_workers=4)  # Adjust number as needed
+        self.thread_pool = ThreadPoolExecutor(max_workers=5)  # Increased to 5 for the new sensor thread
         
         # Submit tasks to the thread pool and store futures
         self.futures = [
@@ -151,6 +174,12 @@ class SensorFusion:
                 accel_thread_func, 
                 self.i2c_bus, self.accel_data_lock, 
                 self.accel_data, self.stop_event, self.config
+            ),
+            # Add environmental sensors thread
+            self.thread_pool.submit(
+                env_thread_func,
+                self.i2c_bus, self.env_data_lock,
+                self.env_data, self.stop_event, self.config
             )
         ]
         
@@ -219,7 +248,7 @@ class SensorFusion:
                 if current_time - self.data_snapshot['timestamp'] > 0.1:
                     # Use a more efficient approach: acquire all locks at once to avoid deadlocks
                     # Python's with statement allows multiple context managers
-                    with self.lidar_data_lock, self.accel_data_lock, self.gps_data_lock:
+                    with self.lidar_data_lock, self.accel_data_lock, self.gps_data_lock, self.env_data_lock:
                         self.data_snapshot['lidar'] = list(self.lidar_data)
                         self.data_snapshot['accel'] = list(self.accel_data)
                         self.data_snapshot['gps'] = {
@@ -228,6 +257,15 @@ class SensorFusion:
                             'alt': self.gps_data['alt'],
                             'sats': self.gps_data['sats'],
                             'timestamp': self.gps_data['timestamp']
+                        }
+                        # Add environmental data to snapshot
+                        self.data_snapshot['env'] = {
+                            'temperature': self.env_data['temperature'],
+                            'humidity': self.env_data['humidity'],
+                            'pressure': self.env_data['pressure'],
+                            'altitude': self.env_data['altitude'],
+                            'temperature_timestamp': self.env_data['temperature_timestamp'],
+                            'pressure_timestamp': self.env_data['pressure_timestamp']
                         }
                         
                     self.data_snapshot['timestamp'] = current_time
@@ -250,6 +288,7 @@ class SensorFusion:
             lidar_data = self.data_snapshot['lidar']
             accel_data = self.data_snapshot['accel']
             gps_data = self.data_snapshot['gps']
+            env_data = self.data_snapshot['env']
             
             # Only lock during the critical section of update
             with self.analysis_lock:

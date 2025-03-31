@@ -267,6 +267,46 @@ header {
     animation: highlightNew 2s ease-out;
 }
 
+/* Environmental data card */
+.environmental .env-readings {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+    padding: 10px 0;
+}
+
+.env-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 10px;
+    border-radius: var(--border-radius);
+    background-color: rgba(52, 152, 219, 0.1);
+    transition: transform 0.2s;
+}
+
+.env-item:hover {
+    transform: translateY(-3px);
+    background-color: rgba(52, 152, 219, 0.2);
+}
+
+.env-icon {
+    font-size: 1.5rem;
+    margin-bottom: 5px;
+}
+
+.env-value {
+    font-size: 1.4rem;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.env-label {
+    font-size: 0.9rem;
+    color: #666;
+}
+
 footer {
     text-align: center;
     padding: 20px;
