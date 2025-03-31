@@ -279,6 +279,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     data.events.forEach(event => {
                         const eventItem = document.createElement('div');
                         eventItem.className = `event-item event-${event.type.toLowerCase()}`;
+                        
+                        // Add source class if available (LiDAR or Accelerometer)
+                        if (event.source) {
+                            eventItem.classList.add(`event-source-${event.source.toLowerCase()}`);
+                        }
+                        
                         eventItem.setAttribute('data-timestamp', event.timestamp);
                         
                         // Check if this is a new event
@@ -289,13 +295,27 @@ document.addEventListener('DOMContentLoaded', function() {
                         const timestamp = new Date(event.timestamp).toLocaleTimeString();
                         let icon = event.type === 'Pothole' ? 'fa-triangle-exclamation' : 'fa-hill-rockslide';
                         
+                        // Content for regular event details
+                        let eventDetails = `Magnitude: ${event.magnitude.toFixed(3)}`;
+                        // Add unit based on source
+                        eventDetails += event.source === 'LiDAR' ? 'mm' : 'g';
+                        
+                        // Add LiDAR-specific details if available
+                        if (event.source === 'LiDAR' && event.angle !== undefined) {
+                            eventDetails += `<br>Angle: ${event.angle.toFixed(1)}°`;
+                        }
+                        eventDetails += `<br>Time: ${timestamp}`;
+                        
+                        // Source indicator
+                        const sourceIndicator = event.source ? 
+                            `<span class="event-source">${event.source}</span>` : '';
+                        
                         eventItem.innerHTML = `
                             <div class="event-title">
-                                <i class="fas ${icon}"></i> ${event.type} (Severity: ${event.severity})
+                                <i class="fas ${icon}"></i> ${event.type} (Severity: ${event.severity}) ${sourceIndicator}
                             </div>
                             <div class="event-details">
-                                Magnitude: ${event.magnitude.toFixed(3)}g<br>
-                                Time: ${timestamp}
+                                ${eventDetails}
                             </div>
                         `;
                         

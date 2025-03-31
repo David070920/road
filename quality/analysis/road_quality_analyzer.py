@@ -65,6 +65,10 @@ class RoadQualityAnalyzer:
     
     def detect_road_events(self, accel_data, gps_data):
         """Detect bumps, potholes and other road events from accelerometer data"""
+        # Skip detection if disabled in config
+        if not getattr(self.config, 'EVENT_DETECTION_ENABLED', True):
+            return []
+            
         if not self.is_calibrated:
             if not self.calibrate(accel_data):
                 return []
@@ -78,9 +82,16 @@ class RoadQualityAnalyzer:
         # Convert to numpy array and remove baseline
         signal = np.array(samples) - self.accel_baseline
         
-        # Find peaks (both positive and negative)
-        pos_peaks, _ = find_peaks(signal, height=self.accel_threshold)
-        neg_peaks, _ = find_peaks(-signal, height=self.accel_threshold)
+        # Get minimum magnitude threshold from config
+        min_magnitude = getattr(self.config, 'MIN_ACCEL_EVENT_MAGNITUDE', 0.5)
+        
+        # Improved detection: Use adaptive threshold based on recent signal variance
+        local_variance = np.var(signal)
+        adaptive_threshold = max(min_magnitude, self.accel_threshold * (1 + 0.5 * np.sqrt(local_variance)))
+        
+        # Find peaks (both positive and negative) with the adaptive threshold
+        pos_peaks, _ = find_peaks(signal, height=adaptive_threshold)
+        neg_peaks, _ = find_peaks(-signal, height=adaptive_threshold)
         
         # Combine peaks and sort by time
         all_peaks = [(idx, signal[idx]) for idx in pos_peaks] + [(idx, signal[idx]) for idx in neg_peaks]
@@ -88,27 +99,37 @@ class RoadQualityAnalyzer:
         
         # Analyze peaks for events
         new_events = []
+        min_severity = getattr(self.config, 'MIN_EVENT_SEVERITY', 30)
+        
         for idx, magnitude in all_peaks:
-            # Classify the event based on magnitude and shape
-            if abs(magnitude) > self.accel_threshold * 2:
+            # Improved algorithm: Check for isolated peaks (not part of a sequence)
+            is_isolated = True
+            for other_idx, _ in all_peaks:
+                if other_idx != idx and abs(other_idx - idx) <= 2:
+                    is_isolated = False
+                    break
+            
+            # Only consider peaks that exceed our threshold and are isolated
+            if abs(magnitude) > adaptive_threshold and is_isolated:
                 event_type = "Pothole" if magnitude < 0 else "Bump"
-                severity = min(100, int(abs(magnitude) / self.accel_threshold * 50))
                 
-                # Create event with GPS data
-                event = {
-                    "type": event_type,
-                    "severity": severity,
-                    "magnitude": float(magnitude),
-                    "timestamp": datetime.now().isoformat(),
-                    "lat": gps_data["lat"],
-                    "lon": gps_data["lon"]
-                }
+                # Improved severity calculation: Use logarithmic scale for more differentiation
+                severity = min(100, int(40 * np.log10(1 + abs(magnitude) / min_magnitude)))
                 
-                new_events.append(event)
-                
-                # Only log significant events - DISABLED to reduce serial spam
-                # if severity > 50:
-                #     logger.info(f"Detected {event_type}: severity={severity}, magnitude={magnitude:.3f}g")
+                # Only record events that meet the minimum severity threshold
+                if severity >= min_severity:
+                    # Create event with GPS data
+                    event = {
+                        "type": event_type,
+                        "severity": severity,
+                        "magnitude": float(magnitude),
+                        "source": "Accelerometer",
+                        "timestamp": datetime.now().isoformat(),
+                        "lat": gps_data["lat"],
+                        "lon": gps_data["lon"]
+                    }
+                    
+                    new_events.append(event)
         
         # Add to master event list
         self.events.extend(new_events)
@@ -380,49 +401,71 @@ class RoadQualityAnalyzer:
             logger.debug(f"Road quality: r²={r_squared:.3f}, std={residual_std:.2f}mm, max_dev={max_deviation:.2f}mm")
             logger.debug(f"Quality score: {quality_score:.1f} → smoothed: {self.lidar_quality_score:.1f}")
         
-        # Log significant changes in road quality - DISABLED to reduce serial spam
-        road_class = self.get_road_classification_from_score(self.lidar_quality_score)
-        # if not hasattr(self, '_last_reported_quality') or \
-        #    abs(self._last_reported_quality - self.lidar_quality_score) > 5:
-        #     logger.info(f"LiDAR road quality: {self.lidar_quality_score:.1f}/100 ({road_class})")
-        #     self._last_reported_quality = self.lidar_quality_score
-        
         return self.lidar_quality_score
     
     def _detect_lidar_events(self, residuals, angles, distances, quality_score):
         """Detect road events from LiDAR data"""
+        # Skip detection if disabled in config
+        if not getattr(self.config, 'EVENT_DETECTION_ENABLED', True):
+            return []
+            
         # Calculate a dynamic threshold based on the data
         if not hasattr(self, 'lidar_event_threshold'):
             median_abs_deviation = np.median(np.abs(residuals - np.median(residuals)))
             # Use MAD as a robust measure of variation (less sensitive to outliers than std)
             self.lidar_event_threshold = 3 * median_abs_deviation
-            # Ensure minimum threshold to avoid detecting noise
-            self.lidar_event_threshold = max(5.0, self.lidar_event_threshold)
+            # Use configuration value if available, otherwise use default minimum
+            min_lidar_magnitude = getattr(self.config, 'MIN_LIDAR_EVENT_MAGNITUDE', 5.0)
+            self.lidar_event_threshold = max(min_lidar_magnitude, self.lidar_event_threshold)
         
         # Find indices where residuals exceed threshold (potential potholes/bumps)
         event_indices = np.where(np.abs(residuals) > self.lidar_event_threshold)[0]
         
-        # Group adjacent indices into single events
+        # Group adjacent indices into single events with improved clustering
         events = []
         if len(event_indices) > 0:
-            event_start = event_indices[0]
-            current_event = [event_start]
+            # Sort indices to ensure proper clustering
+            event_indices = np.sort(event_indices)
             
-            for i in range(1, len(event_indices)):
-                if event_indices[i] == event_indices[i-1] + 1:
-                    # Adjacent point, add to current event
-                    current_event.append(event_indices[i])
+            # Use a smarter clustering approach
+            try:
+                from scipy.cluster.hierarchy import fclusterdata
+                if len(event_indices) > 1:
+                    # Convert to 2D points (index, residual value)
+                    points = np.column_stack((event_indices, residuals[event_indices]))
+                    # Scale the points to give more weight to the index dimension
+                    points[:, 0] = points[:, 0] / max(1, np.max(points[:, 0])) * 10
+                    
+                    # Try clustering with scipy
+                    clusters = fclusterdata(points, t=1.5, criterion='distance')
+                    unique_clusters = np.unique(clusters)
+                    
+                    for cluster_id in unique_clusters:
+                        # Get all indices in this cluster
+                        cluster_indices = event_indices[clusters == cluster_id]
+                        if len(cluster_indices) > 0:
+                            events.append(cluster_indices.tolist())
                 else:
-                    # Non-adjacent point, finish current event and start new one
+                    # Just one point
+                    events.append([event_indices[0]])
+            except:
+                # Fallback to simple adjacency-based grouping if clustering fails
+                current_event = [event_indices[0]]
+                for i in range(1, len(event_indices)):
+                    if event_indices[i] <= event_indices[i-1] + 2:  # Allow for small gaps
+                        current_event.append(event_indices[i])
+                    else:
+                        events.append(current_event)
+                        current_event = [event_indices[i]]
+                
+                # Add the last event
+                if current_event:
                     events.append(current_event)
-                    current_event = [event_indices[i]]
-            
-            # Add the last event
-            if current_event:
-                events.append(current_event)
         
         # Process each detected event
         new_events = []
+        min_severity = getattr(self.config, 'MIN_EVENT_SEVERITY', 30)
+        
         for event_indices in events:
             # Calculate event properties
             event_residuals = residuals[event_indices]
@@ -431,14 +474,44 @@ class RoadQualityAnalyzer:
             event_angle = angles[max_idx]
             event_distance = distances[max_idx]
             
-            # Classify event type and severity
+            # Skip small events (noise)
+            if abs(max_residual) < self.lidar_event_threshold:
+                continue
+                
+            # Improved type classification
+            # Positive residual = LiDAR sees ground closer than expected = pothole
+            # Negative residual = LiDAR sees ground farther than expected = bump
             event_type = "Pothole" if max_residual > 0 else "Bump"
-            severity = min(100, int(abs(max_residual) / self.lidar_event_threshold * 50))
             
-            # Only log significant events - DISABLED to reduce serial spam
-            # if severity > 40 and quality_score < 70:
-            #     logger.info(f"LiDAR detected {event_type}: severity={severity}, " +
-            #                f"deviation={max_residual:.2f}mm at angle={event_angle:.1f}°")
+            # Improved severity calculation with logarithmic scale
+            min_lidar_magnitude = getattr(self.config, 'MIN_LIDAR_EVENT_MAGNITUDE', 5.0)
+            severity = min(100, int(40 * np.log10(1 + abs(max_residual) / min_lidar_magnitude)))
+            
+            # Only create events for significant anomalies
+            if severity >= min_severity:
+                # Create event with GPS data and LiDAR-specific properties
+                gps_data = {"lat": 0, "lon": 0}
+                if hasattr(self.sensor_fusion, 'gps_data'):
+                    gps_data = self.sensor_fusion.gps_data
+                    
+                event = {
+                    "type": event_type,
+                    "severity": severity,
+                    "magnitude": float(abs(max_residual)),  # Use residual as magnitude
+                    "source": "LiDAR",  # Mark as LiDAR-detected event
+                    "angle": float(event_angle),  # LiDAR-specific: detection angle
+                    "distance": float(event_distance),  # LiDAR-specific: detection distance
+                    "timestamp": datetime.now().isoformat(),
+                    "lat": gps_data["lat"],
+                    "lon": gps_data["lon"]
+                }
+                
+                new_events.append(event)
+        
+        # Add to master event list
+        self.events.extend(new_events)
+        
+        return new_events
     
     def get_road_classification_from_score(self, score):
         """Get a textual classification based on a quality score"""
@@ -457,7 +530,7 @@ class RoadQualityAnalyzer:
         """Get a textual classification of the current road quality"""
         # Use LiDAR-based score instead of accelerometer-based score
         return self.get_road_classification_from_score(self.lidar_quality_score)
-    
+
     def get_recent_events(self, count=5):
         """Get the most recent road events"""
         return self.events[-count:] if self.events else []

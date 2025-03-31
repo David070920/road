@@ -1,6 +1,7 @@
 import time
 import logging
 from ..io.i2c_utils import read_aht21_data, read_bmx280_data, read_bmx280_calibration
+from ..hardware.i2c_init import initialize_aht21
 
 logger = logging.getLogger("SensorFusion")
 
@@ -21,6 +22,10 @@ def env_thread_func(i2c_bus, env_data_lock, env_data, stop_event, config):
     
     # Time tracking for sensor update intervals
     last_update_time = 0
+    consecutive_failures = 0
+    
+    # Try to initialize AHT21 at startup
+    aht21_initialized = initialize_aht21(i2c_bus, config)
     
     while not stop_event.is_set():
         try:
@@ -32,6 +37,16 @@ def env_thread_func(i2c_bus, env_data_lock, env_data, stop_event, config):
                 
                 # Read AHT21 temperature and humidity data
                 aht21_data = read_aht21_data(i2c_bus, config)
+                
+                # If AHT21 fails multiple times, try to reinitialize
+                if not aht21_data:
+                    consecutive_failures += 1
+                    if consecutive_failures >= 3:
+                        logger.warning("Multiple AHT21 failures, attempting reinitialization")
+                        aht21_initialized = initialize_aht21(i2c_bus, config)
+                        consecutive_failures = 0
+                else:
+                    consecutive_failures = 0
                 
                 # Read BMX280 pressure and temperature data
                 bmx280_data = read_bmx280_data(i2c_bus, config, bmx280_calibration)

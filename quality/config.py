@@ -78,3 +78,9 @@ class Config:
     
     # Environmental data update interval (in seconds)
     ENV_UPDATE_INTERVAL = 2.0  # Update every 2 seconds to avoid unnecessary frequent readings
+    
+    # Road event detection settings
+    MIN_ACCEL_EVENT_MAGNITUDE = 0.6  # Minimum accelerometer magnitude (in g) to detect an event
+    MIN_LIDAR_EVENT_MAGNITUDE = 10.0  # Minimum LiDAR deviation (in mm) to detect an event
+    MIN_EVENT_SEVERITY = 30  # Minimum severity score (0-100) for an event to be recorded
+    EVENT_DETECTION_ENABLED = True  # Master switch to enable/disable event detection

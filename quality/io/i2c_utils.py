@@ -45,43 +45,74 @@ def get_accel_data(i2c_bus, config):
     return None
 
 def read_aht21_data(i2c_bus, config):
-    """Read temperature and humidity data from AHT21 sensor"""
+    """Read temperature and humidity data from AHT21 sensor with retry logic"""
+    retry_count = 0
+    max_retries = 3
+    
+    while retry_count < max_retries:
+        try:
+            # Send measurement command
+            i2c_bus.write_i2c_block_data(config.AHT21_ADDRESS, 
+                                        config.AHT21_MEASURE_COMMAND[0],
+                                        config.AHT21_MEASURE_COMMAND[1:])
+            
+            # Wait for measurement to complete (80ms typical, increase to 100ms for reliability)
+            time.sleep(0.1)
+            
+            # Read 6 bytes of data
+            data = i2c_bus.read_i2c_block_data(config.AHT21_ADDRESS, 0, 6)
+            
+            # Check status bit (bit 7 of the first byte)
+            if (data[0] & 0x80):
+                logger.warning(f"AHT21 sensor busy or in command mode (attempt {retry_count+1}/{max_retries})")
+                
+                # If sensor is busy, try to reset it
+                if retry_count == 1:  # On second retry, attempt a soft reset
+                    reset_aht21(i2c_bus, config)
+                    time.sleep(0.02)  # Wait after reset
+                
+                retry_count += 1
+                time.sleep(0.2)  # Wait longer before retry
+                continue
+            
+            # Extract humidity (20 bits)
+            humidity_raw = ((data[1] << 16) | (data[2] << 8) | data[3]) >> 4
+            humidity = (humidity_raw / 1048576.0) * 100  # Convert to percentage
+            
+            # Extract temperature (20 bits)
+            temp_raw = ((data[3] & 0x0F) << 16) | (data[4] << 8) | data[5]
+            temperature = (temp_raw / 1048576.0) * 200 - 50  # Convert to Celsius
+            
+            return {
+                'temperature': round(temperature, 1),
+                'humidity': round(humidity, 1)
+            }
+        except Exception as e:
+            logger.error(f"Error reading AHT21 data (attempt {retry_count+1}/{max_retries}): {e}")
+            retry_count += 1
+            time.sleep(0.2)  # Wait before retry
+    
+    # All retries failed
+    return None
+
+def reset_aht21(i2c_bus, config):
+    """Reset the AHT21 sensor when it gets stuck"""
     try:
-        # Send measurement command
+        # Send reset command
+        i2c_bus.write_byte(config.AHT21_ADDRESS, config.AHT21_RESET_COMMAND)
+        time.sleep(0.02)  # 20ms wait time after reset
+        
+        # Re-initialize sensor
         i2c_bus.write_i2c_block_data(config.AHT21_ADDRESS, 
-                                     config.AHT21_MEASURE_COMMAND[0],
-                                     config.AHT21_MEASURE_COMMAND[1:])
+                                    config.AHT21_INIT_COMMAND[0], 
+                                    config.AHT21_INIT_COMMAND[1:])
+        time.sleep(0.02)  # 20ms wait time
         
-        # Wait for measurement to complete (80ms typical)
-        time.sleep(0.08)
-        
-        # Read 6 bytes of data
-        data = i2c_bus.read_i2c_block_data(config.AHT21_ADDRESS, 0, 6)
-        
-        # Check status bit (bit 7 of the first byte)
-        if (data[0] & 0x80):
-            logger.warning("AHT21 sensor busy or in command mode")
-            return None
-        
-        # Calculate humidity and temperature
-        # Humidity is in the bits 16-39 (3 bytes starting from second byte)
-        # Temperature is in the bits 40-59 (2.5 bytes at the end)
-        
-        # Extract humidity (20 bits)
-        humidity_raw = ((data[1] << 16) | (data[2] << 8) | data[3]) >> 4
-        humidity = (humidity_raw / 1048576.0) * 100  # Convert to percentage
-        
-        # Extract temperature (20 bits)
-        temp_raw = ((data[3] & 0x0F) << 16) | (data[4] << 8) | data[5]
-        temperature = (temp_raw / 1048576.0) * 200 - 50  # Convert to Celsius
-        
-        return {
-            'temperature': round(temperature, 1),
-            'humidity': round(humidity, 1)
-        }
+        logger.info("AHT21 sensor reset successfully")
+        return True
     except Exception as e:
-        logger.error(f"Error reading AHT21 data: {e}")
-        return None
+        logger.error(f"Failed to reset AHT21: {e}")
+        return False
 
 def read_bmx280_calibration(i2c_bus, config):
     """Read calibration data from BMX280 sensor"""

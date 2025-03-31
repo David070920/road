@@ -49,7 +49,7 @@ def read_byte(i2c_bus, addr, reg):
     return None
 
 def initialize_aht21(i2c_bus, config):
-    """Initialize the AHT21 temperature and humidity sensor"""
+    """Initialize the AHT21 temperature and humidity sensor with improved reliability"""
     try:
         # Try to read a byte to verify device exists
         try:
@@ -59,18 +59,31 @@ def initialize_aht21(i2c_bus, config):
             logger.error(f"AHT21 not found at address 0x{config.AHT21_ADDRESS:02x}")
             return False
         
-        # Reset the sensor
+        # Reset the sensor first to clear any previous state
         i2c_bus.write_byte(config.AHT21_ADDRESS, config.AHT21_RESET_COMMAND)
-        time.sleep(0.02)  # 20ms wait time after reset
+        time.sleep(0.04)  # 40ms wait time after reset (doubled for reliability)
         
         # Initialize sensor
         i2c_bus.write_i2c_block_data(config.AHT21_ADDRESS, 
                                      config.AHT21_INIT_COMMAND[0], 
                                      config.AHT21_INIT_COMMAND[1:])
-        time.sleep(0.02)  # 20ms wait time
+        time.sleep(0.04)  # 40ms wait time (doubled for reliability)
         
-        logger.info("AHT21 sensor initialized successfully")
-        return True
+        # Verify initialization by reading status
+        status = i2c_bus.read_byte(config.AHT21_ADDRESS)
+        
+        # Bit 3 (Calibrated bit) should be set if initialized correctly
+        if status & 0x08:
+            logger.info("AHT21 sensor initialized successfully (calibration bit set)")
+            return True
+        else:
+            logger.warning("AHT21 sensor initialization may have failed (calibration bit not set)")
+            # Try once more
+            i2c_bus.write_i2c_block_data(config.AHT21_ADDRESS, 
+                                        config.AHT21_INIT_COMMAND[0], 
+                                        config.AHT21_INIT_COMMAND[1:])
+            time.sleep(0.04)
+            return True
     except Exception as e:
         logger.error(f"Failed to initialize AHT21 sensor: {e}")
         return False
