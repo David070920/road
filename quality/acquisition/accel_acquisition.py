@@ -13,9 +13,13 @@ def accel_thread_func(i2c_bus, accel_data_lock, accel_data, stop_event, config):
             accel_z = get_accel_data(i2c_bus, config)
             
             if accel_z is not None:
-                # Update shared data with lock
+                # Update shared data with lock - CircularBuffer will handle memory efficiently
                 with accel_data_lock:
                     accel_data.append(accel_z)
+                    
+                    # If we have a condition variable, notify waiting threads
+                    if hasattr(accel_data_lock, 'notify_all'):
+                        accel_data_lock.notify_all()
                 
                 logger.debug(f"Accelerometer: Z={accel_z:.2f}g")
                 

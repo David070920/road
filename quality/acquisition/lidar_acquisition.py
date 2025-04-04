@@ -47,11 +47,12 @@ def lidar_thread_func(lidar_device, lidar_data_lock, lidar_data, stop_event, con
                 logger.debug(f"LiDAR scan: {len(scan_data)} points, filtered to {len(filtered_data)} points")
                 data_log_interval = 0
             
-            # Update shared data with lock - Replace data instead of appending
-            # Use the condition to notify waiting threads that new data is available
+            # Update shared data with lock using the CircularBuffer's memory-efficient methods
             with lidar_data_lock:
-                lidar_data.clear()  # Clear old data
-                lidar_data.extend(filtered_data)  # Add new data
+                # LidarPointBuffer handles memory efficiently without needing clear()/extend()
+                lidar_data.clear()
+                for point in filtered_data:
+                    lidar_data.append(point)
                 
                 # If a condition variable exists, notify waiting threads
                 if hasattr(lidar_data_lock, 'notify_all'):

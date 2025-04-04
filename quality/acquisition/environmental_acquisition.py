@@ -51,6 +51,12 @@ def env_thread_func(i2c_bus, env_data_lock, env_data, stop_event, config):
                 # Read BMX280 pressure and temperature data
                 bmx280_data = read_bmx280_data(i2c_bus, config, bmx280_calibration)
                 
+                # Create data record for the reading
+                temperature = None
+                humidity = None
+                pressure = None
+                altitude = None
+                
                 # Update shared data with lock
                 with env_data_lock:
                     # Update AHT21 data if available
@@ -58,6 +64,8 @@ def env_thread_func(i2c_bus, env_data_lock, env_data, stop_event, config):
                         env_data['temperature'] = aht21_data['temperature'] 
                         env_data['humidity'] = aht21_data['humidity']
                         env_data['temperature_timestamp'] = current_time
+                        temperature = aht21_data['temperature']
+                        humidity = aht21_data['humidity']
                     
                     # Update BMX280 data if available
                     if bmx280_data:
@@ -65,10 +73,12 @@ def env_thread_func(i2c_bus, env_data_lock, env_data, stop_event, config):
                         if not aht21_data and 'temperature' in bmx280_data:
                             env_data['temperature'] = bmx280_data['temperature']
                             env_data['temperature_timestamp'] = current_time
+                            temperature = bmx280_data['temperature']
                             
                         if 'pressure' in bmx280_data:
                             env_data['pressure'] = bmx280_data['pressure'] 
                             env_data['pressure_timestamp'] = current_time
+                            pressure = bmx280_data['pressure']
                     
                     # Calculate altitude based on pressure (if available)
                     if 'pressure' in env_data and env_data['pressure'] > 0:
@@ -78,8 +88,22 @@ def env_thread_func(i2c_bus, env_data_lock, env_data, stop_event, config):
                             p0 = 1013.25  # Standard sea level pressure in hPa
                             altitude = 44330 * (1 - (env_data['pressure'] / p0) ** (1/5.255))
                             env_data['altitude'] = round(altitude, 1)
+                            altitude = env_data['altitude']
                         except:
                             pass
+                    
+                    # If env_data_history exists, add to the circular buffer for historical data
+                    if hasattr(env_data, 'env_data_history'):
+                        env_data.env_data_history.add_reading(
+                            temperature=temperature,
+                            humidity=humidity,
+                            pressure=pressure,
+                            timestamp=current_time
+                        )
+                    
+                    # If we have a condition variable, notify waiting threads
+                    if hasattr(env_data_lock, 'notify_all'):
+                        env_data_lock.notify_all()
                 
                 # Comment out or set to debug level to disable serial output of environmental data
                 # if hasattr(env_thread_func, "_log_counter"):

@@ -25,6 +25,7 @@ if __name__ == "__main__":
     from quality.core.context_managers import lidar_device_context, serial_port_context, i2c_bus_context
     from quality.web.server import RoadQualityWebServer
     from quality.logging_config import configure_logging  # Add this import
+    from quality.core.data_structures import LidarPointBuffer, AccelerometerBuffer, GPSHistoryBuffer, EnvironmentalDataBuffer
 else:
     # Use relative imports when imported as a module
     from ..config import Config
@@ -36,6 +37,7 @@ else:
     from .context_managers import lidar_device_context, serial_port_context, i2c_bus_context
     from ..web.server import RoadQualityWebServer
     from ..logging_config import configure_logging  # Add this import
+    from .data_structures import LidarPointBuffer, AccelerometerBuffer, GPSHistoryBuffer, EnvironmentalDataBuffer
 
 # Fix Wayland error
 os.environ["QT_QPA_PLATFORM"] = "xcb"  # Use X11 instead of Wayland
@@ -55,12 +57,14 @@ class SensorFusion:
         # Data structures with improved thread safety
         # Use RLock instead of Lock for cases where the same thread might need to acquire the lock multiple times
         self.lidar_data_lock = threading.RLock()
-        self.lidar_data = deque(maxlen=self.config.MAX_DATA_POINTS)
+        # Replace deque with LidarPointBuffer for more efficient memory management
+        self.lidar_data = LidarPointBuffer(capacity=self.config.MAX_DATA_POINTS)
         # Add condition for signaling when new lidar data is available
         self.lidar_data_condition = threading.Condition(self.lidar_data_lock)
         
         self.accel_data_lock = threading.RLock()
-        self.accel_data = deque(maxlen=self.config.MAX_DATA_POINTS)
+        # Replace deque with AccelerometerBuffer for optimized numeric storage
+        self.accel_data = AccelerometerBuffer(capacity=self.config.MAX_DATA_POINTS)
         # Add condition for signaling when new accelerometer data is available
         self.accel_data_condition = threading.Condition(self.accel_data_lock)
         
@@ -78,6 +82,8 @@ class SensorFusion:
             'temperature_timestamp': 0,
             'pressure_timestamp': 0
         }
+        # Add buffer for historical environmental data
+        self.env_data_history = EnvironmentalDataBuffer(capacity=300)  # 5 minutes at 1 sample/sec
         
         # Add a condition for signaling when new environmental data is available
         self.env_data_condition = threading.Condition(self.env_data_lock)
@@ -96,8 +102,8 @@ class SensorFusion:
         self.analyzer = RoadQualityAnalyzer(self.config, self)
         self.analysis_lock = threading.RLock()
         
-        # Add GPS quality history for heatmap
-        self.analyzer.gps_quality_history = []
+        # Add GPS quality history with circular buffer for memory efficiency
+        self.gps_quality_history = GPSHistoryBuffer(capacity=1000)
         
         # Add data ready flag and condition for efficient waiting
         self.data_ready = False
@@ -341,8 +347,8 @@ class SensorFusion:
                         quality_score = self.analyzer.lidar_quality_score
                         # Only add points if we've moved (to avoid clustering)
                         add_point = True
-                        if self.analyzer.gps_quality_history:
-                            last_point = self.analyzer.gps_quality_history[-1]
+                        if self.gps_quality_history:
+                            last_point = self.gps_quality_history[-1]
                             # Calculate rough distance using simple formula
                             dist = (
                                 (last_point['lat'] - gps_data['lat'])**2 + 
@@ -352,16 +358,16 @@ class SensorFusion:
                             add_point = dist > 0.00005  # ~5 meters
                         
                         if add_point:
-                            self.analyzer.gps_quality_history.append({
+                            self.gps_quality_history.append({
                                 'lat': gps_data['lat'],
                                 'lon': gps_data['lon'],
                                 'quality': quality_score,
                                 'timestamp': time.time()
                             })
                             # Limit history size
-                            if len(self.analyzer.gps_quality_history) > 1000:
+                            if len(self.gps_quality_history) > 1000:
                                 # Keep more recent points
-                                self.analyzer.gps_quality_history = self.analyzer.gps_quality_history[-1000:]
+                                self.gps_quality_history = self.gps_quality_history[-1000:]
             except Exception as e:
                 logger.error(f"Error updating GPS quality history: {e}")
         
