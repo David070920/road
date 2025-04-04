@@ -44,10 +44,22 @@ class RoadQualityAnalyzer:
         self._last_quality_calculation = 0  # Timestamp of last calculation
         self._quality_calculation_interval = 0.1  # Minimum seconds between recalculations
         
+        # Combined quality score
+        self.combined_quality_score = 100  # Initialize with perfect score
+        self.last_quality_scores = deque(maxlen=5)  # Track recent combined scores
+        self.quality_change_rate = 0  # Rate of change in combined quality score
+        self.transition_detector = deque(maxlen=8)  # For detecting quality transitions
+        
+        # Environmental calibration factors
+        self.temp_calibration_factor = 1.0
+        self.pressure_calibration_factor = 1.0
+        
         logger.debug("Road Quality Analyzer initialized")
-    
-    def calibrate(self, accel_data):
-        """Calibrate the analyzer with current accelerometer data"""
+        self.event_confidence_threshold = 0.8  # Minimum confidence to report events
+        self.recent_event_locations = {}  # Track recent events by location to avoid duplicates
+        
+    def calibrate(self, accel_data, temp_data=None, pressure_data=None):
+        """Calibrate the analyzer with current accelerometer data and environmental data"""
         if len(accel_data) < 50:  # Need enough samples to calibrate
             return False
             
@@ -59,10 +71,33 @@ class RoadQualityAnalyzer:
         # Set threshold at 2.5x standard deviation - can be adjusted
         self.accel_threshold = max(0.3, 2.5 * std_dev)  # Minimum 0.3g threshold
         
+        # Adjust calibration based on temperature if available
+        if temp_data is not None and len(temp_data) > 0:
+            # Temperature can affect sensor sensitivity
+            current_temp = float(temp_data[-1])
+            # Reference temperature (20°C/68°F is typical)
+            reference_temp = getattr(self.config, 'REFERENCE_TEMPERATURE', 20.0)
+            # Adjust threshold based on temperature difference (±0.5% per °C)
+            temp_diff = current_temp - reference_temp
+            self.temp_calibration_factor = 1.0 + (temp_diff * 0.005)
+            # Apply temperature calibration
+            self.accel_threshold *= self.temp_calibration_factor
+            
+        # Adjust calibration based on pressure if available
+        if pressure_data is not None and len(pressure_data) > 0:
+            # Barometric pressure can affect LiDAR readings
+            current_pressure = float(pressure_data[-1])
+            # Reference pressure (1013.25 hPa is standard at sea level)
+            reference_pressure = getattr(self.config, 'REFERENCE_PRESSURE', 1013.25)
+            # Adjust factor based on pressure difference (±0.1% per 10 hPa)
+            pressure_diff = current_pressure - reference_pressure
+            self.pressure_calibration_factor = 1.0 + (pressure_diff * 0.0001)
+            
         self.is_calibrated = True
-        logger.debug(f"Calibrated: baseline={self.accel_baseline:.3f}g, threshold={self.accel_threshold:.3f}g")
+        logger.debug(f"Calibrated: baseline={self.accel_baseline:.3f}g, threshold={self.accel_threshold:.3f}g, "
+                     f"temp_factor={self.temp_calibration_factor:.3f}, pressure_factor={self.pressure_calibration_factor:.3f}")
         return True
-    
+        
     def detect_road_events(self, accel_data, gps_data):
         """Detect bumps, potholes and other road events from accelerometer data"""
         # Skip detection if disabled in config
@@ -135,7 +170,7 @@ class RoadQualityAnalyzer:
         self.events.extend(new_events)
         
         return new_events
-    
+        
     def calculate_road_quality(self, accel_data, window_size=50):
         """Calculate overall road quality score based on recent accelerometer data"""
         if len(accel_data) < window_size:
@@ -174,7 +209,7 @@ class RoadQualityAnalyzer:
         self.current_quality_score = np.mean(self.segment_scores)
         
         return self.current_quality_score
-    
+        
     def analyze_frequency_spectrum(self, accel_data):
         """Analyze the frequency spectrum of vibrations to classify road texture - Optimized version"""
         if len(accel_data) < 10:
@@ -211,7 +246,6 @@ class RoadQualityAnalyzer:
         if fft_result.size > 1:  # Make sure we have meaningful results
             freq_bins = np.fft.rfftfreq(len(signal), d=0.1)  # Assuming 10Hz sampling
             
-            # Find dominant frequencies (excluding DC)
             # Optimize: Use simplified peak finding for performance
             peak_indices, _ = find_peaks(fft_result[1:], height=np.max(fft_result[1:]) * 0.3)
             peak_indices = peak_indices + 1  # Adjust for the DC offset
@@ -256,17 +290,23 @@ class RoadQualityAnalyzer:
                 
         return self.road_texture_score
     
-    def calculate_lidar_road_quality(self, lidar_data):
-        """Calculate road quality score based on LiDAR data - Optimized version without calibration"""
+    def calculate_lidar_road_quality(self, lidar_data, temp_data=None, pressure_data=None):
+        """Calculate road quality score based on LiDAR data with enhanced responsiveness"""
         # Early return if no data is available
         if not lidar_data:
             logger.debug("No LiDAR data available for road quality calculation")
             return self.lidar_quality_score
             
-        # Rate limiting to avoid excessive calculations
+        # Rate limiting to avoid excessive calculations but allow for rapid change detection
         current_time = time.time()
-        if current_time - self._last_quality_calculation < self._quality_calculation_interval:
-            return self.lidar_quality_score
+        time_since_last = current_time - self._last_quality_calculation
+        
+        # Dynamic rate limiting - calculate more frequently during rapid changes
+        if time_since_last < self._quality_calculation_interval:
+            # Check if we're in a period of rapid change
+            if hasattr(self, 'quality_change_rate') and self.quality_change_rate < 15:
+                # If not changing rapidly, maintain rate limiting
+                return self.lidar_quality_score
         
         self._last_quality_calculation = current_time
         
@@ -274,7 +314,6 @@ class RoadQualityAnalyzer:
         start_time = time.time() if self.enable_profiling else 0
                 
         # Extract valid points for analysis
-        # Optimize: Pre-allocate arrays and use vectorized operations where possible
         valid_points = []
         angles_deg = []
         distances = []
@@ -302,14 +341,17 @@ class RoadQualityAnalyzer:
             logger.debug(f"Not enough valid LiDAR points for analysis: {len(valid_points)} (need 8+)")
             return self.lidar_quality_score
             
-        # Optimize: Convert directly to numpy arrays instead of extracting later
+        # Convert to numpy arrays for faster processing
         angles_deg = np.array(angles_deg)
         distances = np.array(distances)
+        
+        # Apply pressure calibration to distances if available
+        if hasattr(self, 'pressure_calibration_factor') and self.pressure_calibration_factor != 1.0:
+            distances = distances * self.pressure_calibration_factor
         
         # Convert angles to radians - do once for all calculations
         angles_rad = np.radians(angles_deg)
         
-        # Optimize: Only log at debug level and only if enabled
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Analyzing road quality with {len(valid_points)} LiDAR points")
         
@@ -332,19 +374,16 @@ class RoadQualityAnalyzer:
         residuals = distances - expected_distances
         
         # Step 4: Determine if the surface is convex or concave (road crown or dip)
-        # Optimize: Only perform quadratic fit if we have enough points
+        adjusted_residuals = residuals
         if len(angles_deg) >= 5:  # Need at least 5 points for a meaningful fit
             try:
                 # Try quadratic fit to handle road crown/camber
-                # Optimize: Use lower-degree polynomial if fewer points
                 quad_coeffs = np.polyfit(angles_deg, residuals, min(2, len(angles_deg) - 1))
                 quad_fit = np.polyval(quad_coeffs, angles_deg)
                 # Remove the quadratic component from residuals
                 adjusted_residuals = residuals - quad_fit
             except:
                 adjusted_residuals = residuals
-        else:
-            adjusted_residuals = residuals
         
         # Calculate quality metrics on adjusted residuals - all vectorized operations
         mean_abs_deviation = np.mean(np.abs(adjusted_residuals))
@@ -352,14 +391,12 @@ class RoadQualityAnalyzer:
         residual_std = np.std(adjusted_residuals)
         
         # Calculate R² equivalent with adjusted model
-        # Optimize: Only compute if needed for score calculation
         ss_res = np.sum(adjusted_residuals**2)
         mean_distance = np.mean(distances)
         ss_tot = np.sum((distances - mean_distance)**2)
         r_squared = 1 - (ss_res / ss_tot if ss_tot > 0 else 0)
         
         # Adaptive scaling: determine reasonable thresholds based on the data
-        # Optimize: Simplify calculations
         measurement_scale = max(5.0, np.median(distances) * 0.001)  # 0.1% of median, min 5mm
         
         # Calculate quality score with simplified calculations
@@ -375,18 +412,22 @@ class RoadQualityAnalyzer:
         if quality_score > 90:
             quality_score = min(100, 90 + (quality_score - 90) * 2)
         
-        # Only detect events for significant quality drops to save processing
-        if quality_score < 75 or self.lidar_quality_score - quality_score > 10:
-            self._detect_lidar_events(adjusted_residuals, angles_deg, distances, quality_score)
+        # Detect and track quality transitions for responsive updates
+        self.transition_detector.append(quality_score)
+        if len(self.transition_detector) >= 3:
+            recent_scores = list(self.transition_detector)[-3:]
+            # Calculate the rate of change over the last measurements
+            self.quality_change_rate = abs(recent_scores[-1] - recent_scores[0])
         
-        # Smooth the score with previous readings, using weighted average
+        # More responsive smoothing based on rate of change
+        # Alpha (blend factor) increases during rapid changes for faster response
+        alpha = min(0.8, max(0.2, self.quality_change_rate / 50))
+        
+        # Update quality score with exponential smoothing for faster response
+        self.lidar_quality_score = (1 - alpha) * self.lidar_quality_score + alpha * quality_score
+        
+        # Also keep segment scores for trend analysis
         self.lidar_segment_scores.append(quality_score)
-        
-        # Optimize: Use numpy's array operations for weighted average
-        if len(self.lidar_segment_scores) > 0:
-            weights = np.linspace(0.5, 1.0, len(self.lidar_segment_scores))
-            weighted_scores = np.array(self.lidar_segment_scores) * weights
-            self.lidar_quality_score = min(100, np.sum(weighted_scores) / np.sum(weights))
         
         # Conditional logging based on level
         if self.enable_profiling:
@@ -399,7 +440,7 @@ class RoadQualityAnalyzer:
         # Only log detailed quality metrics if debug is enabled
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Road quality: r²={r_squared:.3f}, std={residual_std:.2f}mm, max_dev={max_deviation:.2f}mm")
-            logger.debug(f"Quality score: {quality_score:.1f} → smoothed: {self.lidar_quality_score:.1f}")
+            logger.debug(f"Quality score: {quality_score:.1f} → smoothed: {self.lidar_quality_score:.1f} (alpha={alpha:.2f})")
         
         return self.lidar_quality_score
     
@@ -512,7 +553,163 @@ class RoadQualityAnalyzer:
         self.events.extend(new_events)
         
         return new_events
-    
+        
+    def calculate_combined_road_quality(self, accel_data=None, lidar_data=None, temp_data=None, pressure_data=None):
+        """Calculate a comprehensive road quality score using data from all available sensors"""
+        # Get individual quality scores if data is available
+        accel_score = None
+        if accel_data is not None and len(accel_data) > 0:
+            accel_score = self.calculate_road_quality(accel_data)
+            
+        lidar_score = None
+        if lidar_data is not None and len(lidar_data) > 0:
+            lidar_score = self.calculate_lidar_road_quality(lidar_data, temp_data, pressure_data)
+            
+        # Default weights for sensor fusion
+        accel_weight = getattr(self.config, 'ACCEL_WEIGHT', 0.4)
+        lidar_weight = getattr(self.config, 'LIDAR_WEIGHT', 0.6)
+        
+        # Adjust weights based on data reliability
+        # If driving very slowly, LiDAR is more reliable
+        # If driving quickly, accelerometer may capture more details
+        if hasattr(self.sensor_fusion, 'speed') and self.sensor_fusion.speed is not None:
+            speed = self.sensor_fusion.speed
+            # At low speeds, favor LiDAR; at high speeds, favor accelerometer
+            if speed < 5:  # below 5 km/h or mph
+                accel_weight = 0.2
+                lidar_weight = 0.8
+            elif speed > 60:  # above 60 km/h or mph
+                accel_weight = 0.6
+                lidar_weight = 0.4
+        
+        # Calculate combined score
+        if accel_score is not None and lidar_score is not None:
+            # Both sensors available - weighted average
+            combined_score = (accel_score * accel_weight) + (lidar_score * lidar_weight)
+        elif lidar_score is not None:
+            # Only LiDAR available
+            combined_score = lidar_score
+        elif accel_score is not None:
+            # Only accelerometer available
+            combined_score = accel_score
+        else:
+            # No new data - return last combined score
+            return self.combined_quality_score
+            
+        # Track score changes for responsiveness adjustment
+        self.last_quality_scores.append(combined_score)
+        if len(self.last_quality_scores) > 5:
+            self.last_quality_scores.pop(0)
+            
+        # Calculate rate of change for dynamic responsiveness
+        if len(self.last_quality_scores) >= 2:
+            self.quality_change_rate = abs(self.last_quality_scores[-1] - self.last_quality_scores[-2])
+            
+        # Apply exponential smoothing with adaptive parameter
+        alpha = min(0.8, max(0.2, self.quality_change_rate / 50))
+        self.combined_quality_score = (1 - alpha) * self.combined_quality_score + alpha * combined_score
+        
+        # Round to 1 decimal place for display
+        self.combined_quality_score = round(self.combined_quality_score, 1)
+        
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Combined quality: {self.combined_quality_score:.1f} (accel: {accel_score:.1f}, "
+                        f"lidar: {lidar_score:.1f}, alpha: {alpha:.2f})")
+            
+        return self.combined_quality_score
+        
+    def detect_combined_road_events(self, accel_data=None, lidar_data=None, gps_data=None, temp_data=None, pressure_data=None):
+        """Detect road events using data from multiple sensors for higher accuracy"""
+        # Skip detection if disabled in config
+        if not getattr(self.config, 'EVENT_DETECTION_ENABLED', True):
+            return []
+            
+        new_events = []
+        accel_events = []
+        lidar_events = []
+        
+        # Get accelerometer-based events if data available
+        if accel_data is not None and len(accel_data) > 10 and gps_data is not None:
+            accel_events = self.detect_road_events(accel_data, gps_data)
+            
+        # Get LiDAR-based events if data available
+        if lidar_data is not None and len(lidar_data) > 8:
+            # First calculate quality to trigger event detection
+            self.calculate_lidar_road_quality(lidar_data, temp_data, pressure_data)
+            # Get the latest events (events are detected inside calculate_lidar_road_quality)
+            if self.events:
+                lidar_events = [event for event in self.events[-10:] if event.get('source') == 'LiDAR']
+        
+        # Create a set of locations to check for duplicate events
+        # Define a small area (approximately 5-10m radius) to consider as "same location"
+        location_precision = 5  # Decimal places in GPS coordinates (5 is ~1.1m precision)
+        event_locations = {}
+        
+        # Process all events from both sensors
+        all_events = accel_events + lidar_events
+        for event in all_events:
+            # Get GPS location
+            lat = event.get('lat', 0)
+            lon = event.get('lon', 0)
+            
+            # Skip events with invalid GPS data
+            if lat == 0 and lon == 0:
+                continue
+                
+            # Round coordinates to create location bins
+            location_key = (round(lat, location_precision), round(lon, location_precision))
+            
+            # Check if we already have an event at this location
+            if location_key in event_locations:
+                existing_event = event_locations[location_key]
+                
+                # If this is from a different source than the existing event,
+                # increase the confidence (corroboration between sensors)
+                if event.get('source') != existing_event.get('source'):
+                    # Average severity of both detections
+                    new_severity = (event.get('severity', 0) + existing_event.get('severity', 0)) / 2
+                    existing_event['severity'] = int(new_severity)
+                    # Mark as confirmed by multiple sensors
+                    existing_event['confidence'] = min(1.0, existing_event.get('confidence', 0.7) + 0.3)
+                    existing_event['sources'] = [existing_event.get('source'), event.get('source')]
+                    
+                elif event.get('severity', 0) > existing_event.get('severity', 0):
+                    # This is a stronger detection from same source, update severity
+                    existing_event['severity'] = event.get('severity', 0)
+                    # Slightly increase confidence
+                    existing_event['confidence'] = min(1.0, existing_event.get('confidence', 0.7) + 0.1)
+            else:
+                # New event location
+                event['confidence'] = 0.7  # Start with moderate confidence
+                event['sources'] = [event.get('source')]
+                event_locations[location_key] = event
+                
+        # Only include events with sufficient confidence
+        for location, event in event_locations.items():
+            if event.get('confidence', 0) >= self.event_confidence_threshold:
+                # Check if this is truly a new event or if we've seen it recently
+                # Use a simplified time-based key
+                time_key = event.get('timestamp', '')[:10]  # YYYY-MM-DD
+                location_time_key = f"{location[0]}-{location[1]}-{time_key}"
+                
+                # If we haven't seen this event yet today, add it
+                if location_time_key not in self.recent_event_locations:
+                    new_events.append(event)
+                    # Store this location to avoid duplicate reports
+                    self.recent_event_locations[location_time_key] = time.time()
+        
+        # Clean up old entries in recent_event_locations (older than 1 hour)
+        current_time = time.time()
+        keys_to_remove = [k for k, v in self.recent_event_locations.items() 
+                          if current_time - v > 3600]
+        for key in keys_to_remove:
+            del self.recent_event_locations[key]
+        
+        # Add to master event list
+        self.events.extend(new_events)
+        
+        return new_events
+        
     def get_road_classification_from_score(self, score):
         """Get a textual classification based on a quality score"""
         if score >= 90:
@@ -530,6 +727,10 @@ class RoadQualityAnalyzer:
         """Get a textual classification of the current road quality"""
         # Use LiDAR-based score instead of accelerometer-based score
         return self.get_road_classification_from_score(self.lidar_quality_score)
+        
+    def get_combined_road_classification(self):
+        """Get a textual classification based on the combined road quality score"""
+        return self.get_road_classification_from_score(self.combined_quality_score)
 
     def get_recent_events(self, count=5):
         """Get the most recent road events"""
