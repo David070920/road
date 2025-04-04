@@ -212,6 +212,157 @@
                     </div>
                 </div>
             </section>
+            
+            <!-- Map View Section -->
+            <section class="content-section" id="map" style="display: none;">
+                <div class="data-panel full-width">
+                    <div class="panel-header">
+                        <i class="fas fa-map-marked-alt"></i>
+                        <h2>Road Quality Map</h2>
+                    </div>
+                    <div class="panel-body map-container">
+                        <div id="quality-map" style="height: 500px;"></div>
+                        <div class="map-controls">
+                            <div class="map-legend">
+                                <div class="legend-title">Road Quality</div>
+                                <div class="legend-item">
+                                    <span class="legend-color" style="background-color: #2ecc71;"></span>
+                                    <span>Good (75-100)</span>
+                                </div>
+                                <div class="legend-item">
+                                    <span class="legend-color" style="background-color: #f39c12;"></span>
+                                    <span>Fair (50-74)</span>
+                                </div>
+                                <div class="legend-item">
+                                    <span class="legend-color" style="background-color: #e74c3c;"></span>
+                                    <span>Poor (0-49)</span>
+                                </div>
+                            </div>
+                            <button id="center-map" class="map-button"><i class="fas fa-crosshairs"></i> Center Map</button>
+                            <button id="toggle-heatmap" class="map-button"><i class="fas fa-fire"></i> Toggle Heatmap</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="data-panels">
+                    <div class="data-panel">
+                        <div class="panel-header">
+                            <i class="fas fa-route"></i>
+                            <h2>Trip Statistics</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="stats-grid">
+                                <div class="stats-item">
+                                    <i class="fas fa-road"></i>
+                                    <span class="stats-value" id="distance-traveled">--</span>
+                                    <span class="stats-label">Distance (km)</span>
+                                </div>
+                                <div class="stats-item">
+                                    <i class="fas fa-clock"></i>
+                                    <span class="stats-value" id="trip-duration">--</span>
+                                    <span class="stats-label">Duration</span>
+                                </div>
+                                <div class="stats-item">
+                                    <i class="fas fa-tachometer-alt"></i>
+                                    <span class="stats-value" id="avg-speed">--</span>
+                                    <span class="stats-label">Avg Speed (km/h)</span>
+                                </div>
+                                <div class="stats-item">
+                                    <i class="fas fa-chart-area"></i>
+                                    <span class="stats-value" id="avg-quality">--</span>
+                                    <span class="stats-label">Avg Quality</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Events Section -->
+            <section class="content-section" id="events" style="display: none;">
+                <div class="data-panel full-width">
+                    <div class="panel-header">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <h2>Road Events</h2>
+                        <div class="panel-actions">
+                            <select id="event-filter" class="filter-select">
+                                <option value="all">All Events</option>
+                                <option value="pothole">Potholes</option>
+                                <option value="bump">Bumps</option>
+                                <option value="lidar">LiDAR Events</option>
+                                <option value="accel">Accelerometer Events</option>
+                            </select>
+                            <input type="text" id="event-search" class="search-input" placeholder="Search events...">
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <div id="events-list-full" class="events-list-container">
+                            <div class="no-events">No events detected</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="data-panel full-width">
+                    <div class="panel-header">
+                        <i class="fas fa-chart-bar"></i>
+                        <h2>Event Statistics</h2>
+                    </div>
+                    <div class="panel-body">
+                        <canvas id="eventStatsChart" height="250"></canvas>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Settings Section -->
+            <section class="content-section" id="settings" style="display: none;">
+                <div class="data-panel full-width">
+                    <div class="panel-header">
+                        <i class="fas fa-cog"></i>
+                        <h2>System Settings</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div class="settings-container">
+                            <div class="settings-group">
+                                <h3><i class="fas fa-download"></i> Data Export</h3>
+                                <div class="settings-controls">
+                                    <button id="export-json" class="settings-button"><i class="fas fa-file-code"></i> Export JSON</button>
+                                    <button id="export-csv" class="settings-button"><i class="fas fa-file-csv"></i> Export CSV</button>
+                                    <button id="export-gpx" class="settings-button"><i class="fas fa-map"></i> Export GPX</button>
+                                </div>
+                            </div>
+                            <div class="settings-group">
+                                <h3><i class="fas fa-sliders-h"></i> Display Settings</h3>
+                                <div class="settings-controls">
+                                    <div class="setting-item">
+                                        <label for="chart-smoothing">Chart Smoothing</label>
+                                        <input type="range" id="chart-smoothing" min="0" max="10" value="5">
+                                    </div>
+                                    <div class="setting-item">
+                                        <label for="update-frequency">Update Frequency</label>
+                                        <select id="update-frequency">
+                                            <option value="1000">1 second</option>
+                                            <option value="2000" selected>2 seconds</option>
+                                            <option value="5000">5 seconds</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="settings-group">
+                                <h3><i class="fas fa-bell"></i> Notifications</h3>
+                                <div class="settings-controls">
+                                    <div class="setting-item checkbox">
+                                        <input type="checkbox" id="notify-events" checked>
+                                        <label for="notify-events">Event Notifications</label>
+                                    </div>
+                                    <div class="setting-item checkbox">
+                                        <input type="checkbox" id="notify-sensors">
+                                        <label for="notify-sensors">Sensor Status Changes</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
     
@@ -241,5 +392,7 @@
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
     <script src="{{ url_for('static', filename='js/remote-access.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ui-enhancements.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/map-view.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/events-manager.js') }}"></script>
 </body>
 </html>

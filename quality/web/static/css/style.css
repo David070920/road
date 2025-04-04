@@ -791,3 +791,339 @@ body {
         bottom: 70px;
     }
 }
+
+/* Additional Component Styles */
+
+/* Full width panel */
+.full-width {
+    grid-column: 1 / -1;
+}
+
+/* Map Container */
+.map-container {
+    position: relative;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+#quality-map {
+    width: 100%;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.map-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    background-color: rgba(255, 255, 255, 0.9);
+    border-radius: var(--radius-md);
+    margin-top: 10px;
+}
+
+.map-legend {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.legend-title {
+    font-weight: 600;
+    margin-right: 10px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.legend-color {
+    width: 15px;
+    height: 15px;
+    border-radius: 3px;
+}
+
+.map-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all var(--transition-speed);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.map-button:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+}
+
+.stats-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 15px;
+    border-radius: var(--radius-md);
+    background-color: rgba(53, 89, 224, 0.05);
+}
+
+.stats-item i {
+    font-size: 1.8rem;
+    margin-bottom: 10px;
+    color: var(--primary-color);
+}
+
+.stats-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: var(--dark-color);
+}
+
+.stats-label {
+    font-size: 0.8rem;
+    color: var(--text-color);
+    opacity: 0.7;
+}
+
+/* Panel actions (for filters, etc.) */
+.panel-actions {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+    gap: 10px;
+}
+
+.filter-select, .search-input {
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--light-dark);
+    font-size: 0.9rem;
+}
+
+.search-input {
+    width: 200px;
+}
+
+/* Events list container */
+.events-list-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* Settings styles */
+.settings-container {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+.settings-group {
+    background-color: rgba(53, 89, 224, 0.03);
+    border-radius: var(--radius-md);
+    padding: 20px;
+}
+
+.settings-group h3 {
+    margin-bottom: 15px;
+    font-size: 1.2rem;
+    color: var(--dark-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.settings-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.setting-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 200px;
+}
+
+.setting-item label {
+    font-size: 0.9rem;
+    color: var(--text-color);
+}
+
+.setting-item.checkbox {
+    flex-direction: row;
+    align-items: center;
+}
+
+.setting-item.checkbox input {
+    margin-right: 10px;
+}
+
+.settings-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 10px 15px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all var(--transition-speed);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-button:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+}
+
+/* Dark theme adjustments for new components */
+.dark-theme .map-controls {
+    background-color: rgba(15, 23, 42, 0.8);
+    color: var(--light-color);
+}
+
+.dark-theme .stats-item,
+.dark-theme .settings-group {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark-theme .stats-value,
+.dark-theme .settings-group h3 {
+    color: var(--light-color);
+}
+
+.dark-theme .filter-select,
+.dark-theme .search-input {
+    background-color: var(--dark-light);
+    color: var(--light-color);
+    border-color: var(--dark-color);
+}
+
+/* Make panels more responsive */
+@media (max-width: 1024px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .map-controls {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .map-legend {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .settings-controls {
+        flex-direction: column;
+    }
+    
+    .search-input {
+        width: 100%;
+    }
+}
+
+/* Notification styles */
+.notification {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100%);
+    background-color: rgba(22, 193, 114, 0.95);
+    color: white;
+    padding: 12px 20px;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 9999;
+    transition: transform 0.3s ease;
+}
+
+.notification.show {
+    transform: translateX(-50%) translateY(0);
+}
+
+.notification i {
+    font-size: 1.2rem;
+}
+
+.notification-warning {
+    background-color: rgba(245, 158, 11, 0.95);
+}
+
+.notification-error {
+    background-color: rgba(239, 68, 68, 0.95);
+}
+
+/* 3D Visual Indicator for Road Quality */
+.quality-indicator-3d {
+    position: relative;
+    height: 60px;
+    background: linear-gradient(90deg, #e74c3c 0%, #f39c12 50%, #2ecc71 100%);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-top: 15px;
+}
+
+.quality-indicator-marker {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 4px;
+    background-color: white;
+    border-radius: 2px;
+    transform: translateX(-50%);
+    box-shadow: 0 0 10px rgba(255,255,255,0.8);
+}
+
+/* Battery level indicator for sensors */
+.battery-indicator {
+    display: inline-block;
+    width: 30px;
+    height: 15px;
+    background-color: rgba(255,255,255,0.2);
+    border-radius: 3px;
+    margin-left: 8px;
+    position: relative;
+    overflow: hidden;
+}
+
+.battery-level {
+    height: 100%;
+    background-color: var(--secondary-color);
+    transition: width 0.5s ease;
+}
+
+.battery-low {
+    background-color: var(--warning-color);
+}
+
+.battery-critical {
+    background-color: var(--danger-color);
+}
