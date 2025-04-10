@@ -40,7 +40,7 @@ else:
     from .data_structures import LidarPointBuffer, AccelerometerBuffer, GPSHistoryBuffer, EnvironmentalDataBuffer
 
 # Fix Wayland error
-os.environ["QT_QPA_PLATFORM"] = "xcb"  # Use X11 instead of Wayland
+# os.environ["QT_QPA_PLATFORM"] = "xcb"  # Disabled to allow proper Qt backend selection
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -48,9 +48,15 @@ configure_logging()  # Add this line to silence werkzeug and other libraries
 logger = logging.getLogger("SensorFusion")
 
 class SensorFusion:
-    def __init__(self):
+    def __init__(self, safe_mode=False):
         self.config = Config()
+        self.safe_mode = safe_mode
         
+        if self.safe_mode:
+            logger.info("Running in safe mode - some features will be disabled")
+            # Force disable potentially problematic components in safe mode
+            self.config.ENABLE_VISUALIZATION = False
+            
         # Log user and session information
         logger.info(f"Starting SensorFusion - User: {self.config.USER_LOGIN}, Session start: {self.config.SYSTEM_START_TIME}")
         
@@ -62,150 +68,230 @@ class SensorFusion:
         # Add condition for signaling when new lidar data is available
         self.lidar_data_condition = threading.Condition(self.lidar_data_lock)
         
-        self.accel_data_lock = threading.RLock()
-        # Replace deque with AccelerometerBuffer for optimized numeric storage
-        self.accel_data = AccelerometerBuffer(capacity=self.config.MAX_DATA_POINTS)
-        # Add condition for signaling when new accelerometer data is available
-        self.accel_data_condition = threading.Condition(self.accel_data_lock)
-        
-        self.gps_data_lock = threading.RLock()
-        self.gps_data = {"timestamp": None, "lat": 0, "lon": 0, "alt": 0, "sats": 0, "lock": self.gps_data_lock}
-        self.last_map_update = 0
-        
-        # Add environmental data structure
-        self.env_data_lock = threading.RLock()
-        self.env_data = {
-            'temperature': None,
-            'humidity': None,
-            'pressure': None,
-            'altitude': None,
-            'temperature_timestamp': 0,
-            'pressure_timestamp': 0
-        }
-        # Add buffer for historical environmental data
-        self.env_data_history = EnvironmentalDataBuffer(capacity=300)  # 5 minutes at 1 sample/sec
-        
-        # Add a condition for signaling when new environmental data is available
-        self.env_data_condition = threading.Condition(self.env_data_lock)
-        
-        # Add a data snapshot attribute to avoid full copies
-        self.data_snapshot = {
-            'lidar': None,
-            'accel': None,
-            'gps': None,
-            'env': None,  # Add environmental data to snapshot
-            'timestamp': 0
-        }
-        self.snapshot_lock = threading.RLock()
-        
-        # Use RLock for the analyzer to allow recursive acquisition
-        self.analyzer = RoadQualityAnalyzer(self.config, self)
-        self.analysis_lock = threading.RLock()
-        
-        # Add GPS quality history with circular buffer for memory efficiency
-        self.gps_quality_history = GPSHistoryBuffer(capacity=1000)
-        
-        # Add data ready flag and condition for efficient waiting
-        self.data_ready = False
-        self.data_ready_condition = threading.Condition(self.snapshot_lock)
-        
-        # Device handles
-        self.lidar_device = None
-        self.gps_serial_port = None
-        self.i2c_bus = None
-        
-        # Thread control
-        self.stop_event = threading.Event()
-        self.threads = []
-        self.thread_pool = None
-        self.futures = []
-        
-        # Visualization objects
-        self.fig_lidar = None
-        self.fig_accel = None
-        self.lidar_ani = None
-        self.accel_ani = None
-        
-        # Add web server
-        self.web_server = None
-        
-        # Log the map file location only if GPS map is enabled
-        if getattr(self.config, 'ENABLE_GPS_MAP', False) and hasattr(self.config, 'MAP_HTML_PATH'):
-            logger.info(f"GPS map will be saved to: {self.config.MAP_HTML_PATH}")
-        else:
-            logger.info("GPS map generation is disabled")
+        # Initialize other data structures and objects
+        try:
+            self.accel_data_lock = threading.RLock()
+            # Replace deque with AccelerometerBuffer for optimized numeric storage
+            self.accel_data = AccelerometerBuffer(capacity=self.config.MAX_DATA_POINTS)
+            # Add condition for signaling when new accelerometer data is available
+            self.accel_data_condition = threading.Condition(self.accel_data_lock)
+            
+            self.gps_data_lock = threading.RLock()
+            self.gps_data = {"timestamp": None, "lat": 0, "lon": 0, "alt": 0, "sats": 0, "lock": self.gps_data_lock}
+            self.last_map_update = 0
+            
+            # Add environmental data structure
+            self.env_data_lock = threading.RLock()
+            self.env_data = {
+                'temperature': None,
+                'humidity': None,
+                'pressure': None,
+                'altitude': None,
+                'temperature_timestamp': 0,
+                'pressure_timestamp': 0
+            }
+            # Add buffer for historical environmental data
+            self.env_data_history = EnvironmentalDataBuffer(capacity=300)  # 5 minutes at 1 sample/sec
+            
+            # Add a condition for signaling when new environmental data is available
+            self.env_data_condition = threading.Condition(self.env_data_lock)
+            
+            # Add a data snapshot attribute to avoid full copies
+            self.data_snapshot = {
+                'lidar': None,
+                'accel': None,
+                'gps': None,
+                'env': None,  # Add environmental data to snapshot
+                'timestamp': 0
+            }
+            self.snapshot_lock = threading.RLock()
+            
+            # Use RLock for the analyzer to allow recursive acquisition
+            self.analyzer = RoadQualityAnalyzer(self.config, self)
+            self.analysis_lock = threading.RLock()
+            
+            # Add GPS quality history with circular buffer for memory efficiency
+            self.gps_quality_history = GPSHistoryBuffer(capacity=1000)
+            
+            # Add data ready flag and condition for efficient waiting
+            self.data_ready = False
+            self.data_ready_condition = threading.Condition(self.snapshot_lock)
+            
+            # Device handles
+            self.lidar_device = None
+            self.gps_serial_port = None
+            self.i2c_bus = None
+            
+            # Thread control
+            self.stop_event = threading.Event()
+            self.threads = []
+            self.thread_pool = None
+            self.futures = []
+            
+            # Visualization objects
+            self.fig_lidar = None
+            self.fig_accel = None
+            self.lidar_ani = None
+            self.accel_ani = None
+            
+            # Add web server
+            self.web_server = None
+            
+            # Log the map file location only if GPS map is enabled
+            if getattr(self.config, 'ENABLE_GPS_MAP', False) and hasattr(self.config, 'MAP_HTML_PATH'):
+                logger.info(f"GPS map will be saved to: {self.config.MAP_HTML_PATH}")
+            else:
+                logger.info("GPS map generation is disabled")
+        except Exception as e:
+            logger.error(f"Error during SensorFusion initialization: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def initialize_devices(self):
-        """Initialize all the devices"""
-        self.i2c_bus = initialize_i2c()
-        if not self.i2c_bus:
-            logger.error("Failed to initialize I2C. Exiting.")
-            return False
-        
-        self.lidar_device = initialize_lidar(self.config)
-        if not self.lidar_device:
-            logger.error("Failed to initialize LiDAR. Exiting.")
+        """Initialize all the devices with improved error handling"""
+        try:
+            self.i2c_bus = initialize_i2c()
+            if not self.i2c_bus:
+                logger.error("Failed to initialize I2C. Exiting.")
+                return False
+        except Exception as e:
+            logger.error(f"Critical error initializing I2C: {e}")
             return False
             
-        self.gps_serial_port = initialize_gps(self.config)
-        if not self.gps_serial_port:
-            logger.warning("Failed to initialize GPS. Continuing without GPS.")
+        try:
+            self.lidar_device = initialize_lidar(self.config)
+            if not self.lidar_device:
+                if self.safe_mode:
+                    logger.warning("Failed to initialize LiDAR but continuing in safe mode.")
+                else:
+                    logger.error("Failed to initialize LiDAR. Exiting.")
+                    return False
+        except Exception as e:
+            logger.error(f"Error initializing LiDAR: {e}")
+            if not self.safe_mode:
+                return False
             
-        if not initialize_icm20948(self.i2c_bus, self.config):
-            logger.warning("Failed to initialize ICM20948. Continuing without accelerometer data.")
+        try:
+            self.gps_serial_port = initialize_gps(self.config)
+            if not self.gps_serial_port:
+                logger.warning("Failed to initialize GPS. Continuing without GPS.")
+        except Exception as e:
+            logger.warning(f"Error initializing GPS: {e}")
         
-        # Initialize AHT21 temperature/humidity sensor
-        if not initialize_aht21(self.i2c_bus, self.config):
-            logger.warning("Failed to initialize AHT21 sensor. Continuing without temperature/humidity data.")
+        try:
+            if not initialize_icm20948(self.i2c_bus, self.config):
+                logger.warning("Failed to initialize ICM20948. Continuing without accelerometer data.")
+        except Exception as e:
+            logger.warning(f"Error initializing accelerometer: {e}")
         
-        # Initialize BMX280 pressure/temperature sensor
-        if not initialize_bmx280(self.i2c_bus, self.config):
-            logger.warning("Failed to initialize BMX280 sensor. Continuing without pressure data.")
+        try:
+            # Initialize AHT21 temperature/humidity sensor
+            if not initialize_aht21(self.i2c_bus, self.config):
+                logger.warning("Failed to initialize AHT21 sensor. Continuing without temperature/humidity data.")
+        except Exception as e:
+            logger.warning(f"Error initializing temperature/humidity sensor: {e}")
+        
+        try:
+            # Initialize BMX280 pressure/temperature sensor
+            if not initialize_bmx280(self.i2c_bus, self.config):
+                logger.warning("Failed to initialize BMX280 sensor. Continuing without pressure data.")
+        except Exception as e:
+            logger.warning(f"Error initializing pressure sensor: {e}")
         
         return True
 
     def start_threads(self):
-        """Start data acquisition threads using a thread pool"""
+        """Start data acquisition threads using a thread pool with improved error handling"""
         # Create a thread pool with appropriate number of workers
-        self.thread_pool = ThreadPoolExecutor(max_workers=5)  # Increased to 5 for the new sensor thread
+        self.thread_pool = ThreadPoolExecutor(max_workers=5)
+        self.futures = []
         
-        # Submit tasks to the thread pool and store futures
-        self.futures = [
-            self.thread_pool.submit(
-                lidar_thread_func, 
-                self.lidar_device, self.lidar_data_lock, 
-                self.lidar_data, self.stop_event, self.config
-            ),
-            self.thread_pool.submit(
-                gps_thread_func, 
-                self.gps_serial_port, self.gps_data_lock, 
-                self.gps_data, self.stop_event, self.config, 
-                update_gps_map, self
-            ),
-            self.thread_pool.submit(
-                accel_thread_func, 
-                self.i2c_bus, self.accel_data_lock, 
-                self.accel_data, self.stop_event, self.config
-            ),
+        # Submit tasks to the thread pool with proper error handling
+        if self.lidar_device:
+            try:
+                self.futures.append(
+                    self.thread_pool.submit(
+                        lidar_thread_func, 
+                        self.lidar_device, self.lidar_data_lock, 
+                        self.lidar_data, self.stop_event, self.config
+                    )
+                )
+                logger.info("LiDAR acquisition thread started")
+            except Exception as e:
+                logger.error(f"Failed to start LiDAR thread: {e}")
+        elif not self.safe_mode:
+            logger.warning("LiDAR device not initialized, skipping LiDAR thread")
+            
+        if self.gps_serial_port:
+            try:
+                self.futures.append(
+                    self.thread_pool.submit(
+                        gps_thread_func, 
+                        self.gps_serial_port, self.gps_data_lock, 
+                        self.gps_data, self.stop_event, self.config, 
+                        update_gps_map, self
+                    )
+                )
+                logger.info("GPS acquisition thread started")
+            except Exception as e:
+                logger.error(f"Failed to start GPS thread: {e}")
+        else:
+            logger.warning("GPS device not initialized, skipping GPS thread")
+            
+        if self.i2c_bus:
+            try:
+                self.futures.append(
+                    self.thread_pool.submit(
+                        accel_thread_func, 
+                        self.i2c_bus, self.accel_data_lock, 
+                        self.accel_data, self.stop_event, self.config
+                    )
+                )
+                logger.info("Accelerometer acquisition thread started")
+            except Exception as e:
+                logger.error(f"Failed to start accelerometer thread: {e}")
+                
             # Add environmental sensors thread
-            self.thread_pool.submit(
-                env_thread_func,
-                self.i2c_bus, self.env_data_lock,
-                self.env_data, self.stop_event, self.config
-            )
-        ]
+            try:
+                self.futures.append(
+                    self.thread_pool.submit(
+                        env_thread_func,
+                        self.i2c_bus, self.env_data_lock,
+                        self.env_data, self.stop_event, self.config
+                    )
+                )
+                logger.info("Environmental sensors thread started")
+            except Exception as e:
+                logger.error(f"Failed to start environmental sensors thread: {e}")
+        else:
+            logger.warning("I2C bus not initialized, skipping accelerometer and environmental threads")
         
         # Start the analysis thread separately since it depends on the other threads
-        analysis_thread = threading.Thread(
-            target=self.analysis_thread_func,
-            daemon=True
-        )
-        analysis_thread.start()
-        self.threads.append(analysis_thread)
+        try:
+            analysis_thread = threading.Thread(
+                target=self.analysis_thread_func,
+                daemon=True
+            )
+            analysis_thread.start()
+            self.threads.append(analysis_thread)
+            logger.info("Analysis thread started")
+        except Exception as e:
+            logger.error(f"Failed to start analysis thread: {e}")
+            # Analysis thread is critical, consider stopping if it fails
+            if not self.safe_mode:
+                self.stop_event.set()
+                logger.error("Critical thread failed, initiating shutdown")
+                return False
+                
+        return True
 
     def setup_signal_handler(self):
         """Set up signal handler for graceful shutdown"""
-        signal.signal(signal.SIGINT, self.signal_handler)
+        import threading
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self.signal_handler)
+        else:
+            logger.warning("Skipping signal handler setup: not in main thread")
 
     def signal_handler(self, sig, frame):
         """Handle SIGINT (Ctrl+C) gracefully"""
@@ -398,81 +484,117 @@ class SensorFusion:
         logger.info("Analysis thread stopped")
 
     def run(self):
-        """Main function to run the application"""
-        self.setup_signal_handler()
-        
-        if not self.initialize_devices():
-            self.cleanup()
-            return
-        
-        # Use context managers for device resources during the entire run
-        with lidar_device_context(self.lidar_device) as lidar, \
-             serial_port_context(self.gps_serial_port) as gps, \
-             i2c_bus_context(self.i2c_bus) as i2c:
+        """Main function to run the application with improved error handling"""
+        try:
+            self.setup_signal_handler()
             
-            # Update the device references to ensure we use the managed resources
-            self.lidar_device = lidar
-            self.gps_serial_port = gps
-            self.i2c_bus = i2c
-            
-            # Skip map creation if disabled
-            if getattr(self.config, 'ENABLE_GPS_MAP', False):
-                create_default_map(self.config)
-            
-            self.start_threads()
-            
-            try:
-                # Only setup visualization if enabled in config
-                if self.config.ENABLE_VISUALIZATION:
-                    logger.info("Setting up visualization...")
-                    self.fig_lidar, self.fig_accel, self.lidar_ani, self.accel_ani = setup_visualization(
-                        self.lidar_data, self.lidar_data_lock, 
-                        self.accel_data, self.accel_data_lock, 
-                        self.config,
-                        self.analyzer,
-                        self.analysis_lock
-                    )
-                    # Show the figures but don't block
-                    plt.ioff()  # Use plt.ioff() to avoid keeping windows always on top
-                    plt.show(block=False)
-                else:
-                    logger.info("Visualization disabled in configuration")
-                
-                # Initialize and start the web server
-                self.web_server = RoadQualityWebServer(
-                    self, 
-                    self.config, 
-                    host=self.config.WEB_SERVER_HOST, 
-                    port=self.config.WEB_SERVER_PORT
-                )
-                web_thread = threading.Thread(target=self.web_server.start, daemon=True)
-                web_thread.start()
-                logger.info(f"Web interface available at http://{self.config.WEB_SERVER_HOST}:{self.config.WEB_SERVER_PORT}")
-                
-                # Skip map opening if disabled
-                if getattr(self.config, 'ENABLE_GPS_MAP', False):
-                    # Try to open the map in browser
-                    try:
-                        map_url = 'file://' + os.path.abspath(self.config.MAP_HTML_PATH)
-                        logger.info(f"Opening map at: {map_url}")
-                        if webbrowser.open(map_url):
-                            logger.info("Map opened in browser")
-                        else:
-                            logger.warning("Failed to open browser, but map file was created")
-                    except Exception as e:
-                        logger.error(f"Error opening map in browser: {e}")
-                
-                # Keep the main thread alive but responsive to signals
-                while not self.stop_event.is_set():
-                    if self.config.ENABLE_VISUALIZATION:
-                        plt.pause(0.1)  # Update plots while allowing other operations
-                    else:
-                        time.sleep(0.1)  # Just sleep when visualization is disabled
-                    
-            except Exception as e:
-                logger.error(f"Error in visualization: {e}", exc_info=True)
-            finally:
+            if not self.initialize_devices():
+                logger.error("Device initialization failed, cannot continue")
                 self.cleanup()
+                return
+            
+            # Use context managers for device resources during the entire run
+            # But handle potential segfaults with try/except blocks
+            try:
+                with lidar_device_context(self.lidar_device) as lidar:
+                    self.lidar_device = lidar
+                    logger.debug("LiDAR context manager initialized successfully")
+                    
+                    with serial_port_context(self.gps_serial_port) as gps:
+                        self.gps_serial_port = gps
+                        logger.debug("GPS context manager initialized successfully")
+                        
+                        with i2c_bus_context(self.i2c_bus) as i2c:
+                            self.i2c_bus = i2c
+                            logger.debug("I2C bus context manager initialized successfully")
+                            
+                            # Skip map creation if disabled
+                            if getattr(self.config, 'ENABLE_GPS_MAP', False):
+                                try:
+                                    create_default_map(self.config)
+                                except Exception as e:
+                                    logger.error(f"Error creating default map: {e}")
+                            
+                            # Start data acquisition threads
+                            thread_start_success = self.start_threads()
+                            if not thread_start_success and not self.safe_mode:
+                                logger.error("Failed to start critical threads, exiting")
+                                return
+                            
+                            try:
+                                # Only setup visualization if enabled in config and not in safe mode
+                                if self.config.ENABLE_VISUALIZATION and not self.safe_mode:
+                                    logger.info("Setting up visualization...")
+                                    try:
+                                        self.fig_lidar, self.fig_accel, self.lidar_ani, self.accel_ani = setup_visualization(
+                                            self.lidar_data, self.lidar_data_lock, 
+                                            self.accel_data, self.accel_data_lock, 
+                                            self.config,
+                                            self.analyzer,
+                                            self.analysis_lock
+                                        )
+                                        # Show the figures but don't block
+                                        plt.ioff()  # Use plt.ioff() to avoid keeping windows always on top
+                                        plt.show(block=False)
+                                    except Exception as vis_error:
+                                        logger.error(f"Visualization setup failed: {vis_error}")
+                                        self.config.ENABLE_VISUALIZATION = False
+                                else:
+                                    logger.info("Visualization disabled in configuration")
+                                
+                                # Initialize and start the web server
+                                try:
+                                    self.web_server = RoadQualityWebServer(
+                                        self, 
+                                        self.config, 
+                                        host=self.config.WEB_SERVER_HOST, 
+                                        port=self.config.WEB_SERVER_PORT
+                                    )
+                                    web_thread = threading.Thread(target=self.web_server.start, daemon=True)
+                                    web_thread.start()
+                                    logger.info(f"Web interface available at http://{self.config.WEB_SERVER_HOST}:{self.config.WEB_SERVER_PORT}")
+                                except Exception as web_error:
+                                    logger.error(f"Web server initialization failed: {web_error}")
+                                
+                                # Skip map opening if disabled
+                                if getattr(self.config, 'ENABLE_GPS_MAP', False) and not self.safe_mode:
+                                    # Try to open the map in browser
+                                    try:
+                                        map_url = 'file://' + os.path.abspath(self.config.MAP_HTML_PATH)
+                                        logger.info(f"Opening map at: {map_url}")
+                                        if webbrowser.open(map_url):
+                                            logger.info("Map opened in browser")
+                                        else:
+                                            logger.warning("Failed to open browser, but map file was created")
+                                    except Exception as e:
+                                        logger.error(f"Error opening map in browser: {e}")
+                                
+                                # Keep the main thread alive but responsive to signals
+                                logger.info("System running - Press Ctrl+C to exit")
+                                while not self.stop_event.is_set():
+                                    try:
+                                        if self.config.ENABLE_VISUALIZATION:
+                                            plt.pause(0.1)  # Update plots while allowing other operations
+                                        else:
+                                            time.sleep(0.1)  # Just sleep when visualization is disabled
+                                    except Exception as loop_error:
+                                        logger.error(f"Error in main loop: {loop_error}")
+                                        if not self.safe_mode:
+                                            break
+                                        time.sleep(0.2)  # Avoid spinning too fast in case of error
+                                
+                            except Exception as e:
+                                logger.error(f"Error in system operation: {e}", exc_info=True)
+                
+            except Exception as device_error:
+                logger.error(f"Critical error in device management: {device_error}", exc_info=True)
+                
+        except Exception as outer_error:
+            logger.error(f"Unhandled exception in system: {outer_error}", exc_info=True)
+            
+        finally:
+            logger.info("Beginning system cleanup...")
+            self.cleanup()
 
 # Add a main block to make the file runnable directly
 if __name__ == "__main__":

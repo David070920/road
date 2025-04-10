@@ -105,10 +105,14 @@ document.addEventListener('DOMContentLoaded', function() {
             // Update trip statistics
             updateTripStatistics(data);
             
-            // Add quality data point for heatmap
-            if (data.lidar_quality !== undefined) {
+            // Use combined quality score if available, else fallback to lidar_quality
+            let qualityScore = data.combined_quality_score !== undefined && data.combined_quality_score !== null
+                ? data.combined_quality_score
+                : data.lidar_quality;
+            
+            if (qualityScore !== undefined && qualityScore !== null) {
                 // Calculate color intensity based on quality
-                let intensity = 1 - (data.lidar_quality / 100); // Reverse scale (lower quality = higher intensity for heatmap)
+                let intensity = 1 - (qualityScore / 100);
                 roadQualityData.push([data.gps.lat, data.gps.lon, intensity]);
                 
                 // Update the heatmap if it's visible
@@ -117,7 +121,42 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 // Color the path based on quality
-                colorPath(data.lidar_quality);
+                colorPath(qualityScore);
+            }
+            
+            // Add event markers
+            if (data.recent_events && Array.isArray(data.recent_events)) {
+                // Clear existing event markers if any
+                if (window.eventMarkers) {
+                    window.eventMarkers.forEach(m => map.removeLayer(m));
+                }
+                window.eventMarkers = [];
+                
+                data.recent_events.forEach(event => {
+                    if (!event.lat || !event.lon) return;
+                    const severity = event.severity || 0;
+                    const source = event.source || 'unknown';
+                    const confidence = event.confidence || 0;
+                    
+                    // Choose color based on severity
+                    let color = 'blue';
+                    if (severity >= 7) color = 'red';
+                    else if (severity >= 4) color = 'orange';
+                    else if (severity >= 1) color = 'yellow';
+                    
+                    const marker = L.circleMarker([event.lat, event.lon], {
+                        radius: 6,
+                        color: color,
+                        fillColor: color,
+                        fillOpacity: 0.8
+                    }).addTo(map);
+                    
+                    marker.bindPopup(
+                        `<b>Event</b><br>Severity: ${severity}<br>Source: ${source}<br>Confidence: ${confidence.toFixed(2)}`
+                    );
+                    
+                    window.eventMarkers.push(marker);
+                });
             }
             
             // Auto-center the map if this is the first position fix

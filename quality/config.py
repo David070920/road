@@ -12,7 +12,7 @@ class Config:
     MAX_FRAME_SKIP = 2     # Maximum number of frames to skip for smoother rendering
     
     # Visualization settings
-    ENABLE_VISUALIZATION = False  # Master switch to enable/disable all visualization graphs
+    ENABLE_VISUALIZATION = True  # Master switch to enable/disable all visualization graphs
     ENABLE_LIDAR_GRAPH = True    # Enable/disable LiDAR visualization
     ENABLE_ACCEL_GRAPH = True    # Enable/disable accelerometer visualization
     

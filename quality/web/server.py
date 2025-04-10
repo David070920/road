@@ -1,4 +1,7 @@
 import flask
+import time
+import os
+from quality.data_storage import DataStorage
 from flask import Flask, render_template
 from flask_socketio import SocketIO
 import threading
@@ -236,7 +239,11 @@ class RoadQualityWebServer:
                         'humidity': self.sensor_fusion.env_data['humidity'],
                         'pressure': self.sensor_fusion.env_data['pressure'],
                         'altitude': self.sensor_fusion.env_data['altitude']
-                    }
+                    },
+                    # Add combined road quality score
+                    'combined_quality_score': getattr(self.sensor_fusion.analyzer, 'combined_quality_score', None),
+                    # Add recent detected events
+                    'recent_events': getattr(self.sensor_fusion.analyzer, 'events', [])[-20:]
                 }
             # Only emit if there are connected clients to save resources
             if self.connected_clients > 0:
@@ -252,6 +259,29 @@ class RoadQualityWebServer:
                 
         except Exception as e:
             logger.error(f"Error emitting data update: {e}")
+        # Save data to database
+        try:
+            if hasattr(self, 'data_storage') and self.data_storage:
+                ts = data.get('timestamp', time.time())
+                lat = data.get('gps', {}).get('lat', 0)
+                lon = data.get('gps', {}).get('lon', 0)
+                quality_score = data.get('combined_quality_score', None)
+                classification = data.get('classification', '')
+
+                # Insert road quality data
+                self.data_storage.insert_quality_data(ts, lat, lon, quality_score, classification)
+
+                # Insert recent events
+                for event in data.get('recent_events', []):
+                    event_lat = event.get('lat', 0)
+                    event_lon = event.get('lon', 0)
+                    severity = event.get('severity', 0)
+                    source = event.get('source', '')
+                    confidence = event.get('confidence', 0)
+                    event_ts = event.get('timestamp', ts)
+                    self.data_storage.insert_event(event_ts, event_lat, event_lon, severity, source, confidence)
+        except Exception as e:
+            logger.error(f"Error saving data to database: {e}")
     
     def data_update_loop(self):
         """Background thread that emits data updates periodically"""
