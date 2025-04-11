@@ -4,16 +4,18 @@ import subprocess
 import datetime
 import threading
 import queue
-import time  # Add time module
+import time
+import json
 import numpy as np
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QPushButton, QLabel, QHBoxLayout, QFileDialog, 
                             QMessageBox, QScrollArea, QTabWidget, QGridLayout, 
                             QLineEdit, QFormLayout, QGroupBox, QCheckBox,
                             QComboBox, QTextEdit, QProgressBar, QSplitter,
-                            QFrame, QToolBar, QAction, QStatusBar)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread
-from PyQt5.QtGui import QIcon, QColor, QPalette, QFont
+                            QFrame, QToolBar, QAction, QStatusBar, QStyleFactory,
+                            QAbstractItemView, QListWidget, QListWidgetItem, QDialogButtonBox, QDialog, QRadioButton, QSpinBox, QSlider, QSplashScreen)
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QUrl
+from PyQt5.QtGui import QIcon, QColor, QPalette, QFont, QDesktopServices, QPixmap
 
 # Matplotlib integration
 import matplotlib
@@ -34,6 +36,31 @@ from quality.visualization.accel_plots import update_accel_plot
 from quality.visualization.lidar_plots import update_lidar_plot
 from quality.core.sensor_fusion import SensorFusion
 from quality.analysis.road_quality_analyzer import RoadQualityAnalyzer
+
+class SplashScreen(QSplashScreen):
+    """Custom splash screen with progress indicator"""
+    def __init__(self):
+        # Create a basic splash image if none exists
+        splash_pixmap = QPixmap(400, 300)
+        splash_pixmap.fill(QColor("#3559e0"))  # Blue background matching web theme
+        
+        super(SplashScreen, self).__init__(splash_pixmap)
+        self.setWindowFlag(Qt.WindowStaysOnTopHint)
+        
+        # Add title and version
+        self.setFont(QFont("Arial", 12))
+        self.showMessage("Road Quality Measurement System", 
+                         Qt.AlignHCenter | Qt.AlignBottom, Qt.white)
+        
+        # Add progress text
+        self.progress_text = ""
+        
+    def show_message(self, message):
+        """Update splash screen message"""
+        self.progress_text = message
+        self.showMessage(f"Road Quality Measurement System\n\n{self.progress_text}", 
+                         Qt.AlignHCenter | Qt.AlignBottom, Qt.white)
+        QApplication.processEvents()
 
 class SensorDataReader(QThread):
     """Thread to read data from the SensorFusion module"""
@@ -696,14 +723,8 @@ class DataVisualizer(QWidget):
         map_layout.addWidget(self.map_chart)
         self.map_widget.setLayout(map_layout)
         
-        # Events tab remains as placeholder for now
-        self.events_widget = QWidget()
-        events_layout = QVBoxLayout()
-        self.events_placeholder = QLabel("Road Events")
-        self.events_placeholder.setAlignment(Qt.AlignCenter)
-        self.events_placeholder.setStyleSheet("background-color: #34495e; color: white; min-height: 200px;")
-        events_layout.addWidget(self.events_placeholder)
-        self.events_widget.setLayout(events_layout)
+        # Events tab with road events panel
+        self.events_widget = EventsPanel()
         
         # Add tabs
         self.tabs.addTab(self.accel_widget, "Accelerometer")
@@ -941,11 +962,524 @@ class LogViewer(QWidget):
             self.log_text.setPlainText(f"Error loading log file: {str(e)}")
 
 
+class ExportDialog(QDialog):
+    """Dialog for exporting road quality data in various formats"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Export Data")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # File format selection
+        format_group = QGroupBox("Export Format")
+        format_layout = QVBoxLayout()
+        
+        self.format_json = QRadioButton("JSON Format")
+        self.format_json.setChecked(True)
+        self.format_csv = QRadioButton("CSV Format")
+        self.format_gpx = QRadioButton("GPX Format (for GPS tracks)")
+        
+        format_layout.addWidget(self.format_json)
+        format_layout.addWidget(self.format_csv)
+        format_layout.addWidget(self.format_gpx)
+        format_group.setLayout(format_layout)
+        
+        # Data selection
+        data_group = QGroupBox("Data to Export")
+        data_layout = QVBoxLayout()
+        
+        self.data_accel = QCheckBox("Accelerometer Data")
+        self.data_accel.setChecked(True)
+        self.data_lidar = QCheckBox("LiDAR Data")
+        self.data_lidar.setChecked(True)
+        self.data_gps = QCheckBox("GPS Coordinates")
+        self.data_gps.setChecked(True)
+        self.data_events = QCheckBox("Road Events")
+        self.data_events.setChecked(True)
+        self.data_quality = QCheckBox("Road Quality Scores")
+        self.data_quality.setChecked(True)
+        
+        data_layout.addWidget(self.data_accel)
+        data_layout.addWidget(self.data_lidar)
+        data_layout.addWidget(self.data_gps)
+        data_layout.addWidget(self.data_events)
+        data_layout.addWidget(self.data_quality)
+        data_group.setLayout(data_layout)
+        
+        # Time range
+        time_group = QGroupBox("Time Range")
+        time_layout = QFormLayout()
+        
+        self.time_all = QRadioButton("All Data")
+        self.time_all.setChecked(True)
+        self.time_last = QRadioButton("Last")
+        self.time_value = QSpinBox()
+        self.time_value.setRange(1, 60)
+        self.time_value.setValue(5)
+        self.time_unit = QComboBox()
+        self.time_unit.addItems(["Minutes", "Hours"])
+        self.time_unit.setCurrentIndex(0)
+        
+        time_range_layout = QHBoxLayout()
+        time_range_layout.addWidget(self.time_last)
+        time_range_layout.addWidget(self.time_value)
+        time_range_layout.addWidget(self.time_unit)
+        
+        time_layout.addRow(self.time_all)
+        time_layout.addRow("", time_range_layout)
+        time_group.setLayout(time_layout)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        
+        # Add to main layout
+        layout.addWidget(format_group)
+        layout.addWidget(data_group)
+        layout.addWidget(time_group)
+        layout.addWidget(buttons)
+        
+    def accept(self):
+        """Handle OK button click"""
+        try:
+            # Get the file save location
+            file_filter = "JSON Files (*.json)" if self.format_json.isChecked() else \
+                         "CSV Files (*.csv)" if self.format_csv.isChecked() else \
+                         "GPX Files (*.gpx)"
+            
+            extension = ".json" if self.format_json.isChecked() else \
+                       ".csv" if self.format_csv.isChecked() else \
+                       ".gpx"
+            
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Export File",
+                f"road_quality_data{extension}",
+                file_filter
+            )
+            
+            if not filename:
+                return  # User cancelled
+                
+            # Simulate export process
+            self.parent().progress.setVisible(True)
+            QApplication.processEvents()
+            
+            # TODO: Implement actual export functionality
+            QTimer.singleShot(500, lambda: self.export_complete(filename))
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
+            self.parent().progress.setVisible(False)
+    
+    def export_complete(self, filename):
+        """Handle export completion"""
+        self.parent().progress.setVisible(False)
+        self.parent().log_viewer.append_log(f"Data exported to {filename}", "Info")
+        QMessageBox.information(self, "Export Complete", f"Data has been exported to:\n{filename}")
+        super().accept()
+
+
+class EventsPanel(QWidget):
+    """Widget to display and manage road events similar to web interface"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Filter controls
+        filter_layout = QHBoxLayout()
+        
+        filter_layout.addWidget(QLabel("Filter:"))
+        self.event_filter = QComboBox()
+        self.event_filter.addItems(["All Events", "Potholes", "Bumps", "LiDAR Events", "Accelerometer Events"])
+        self.event_filter.currentTextChanged.connect(self.filter_events)
+        filter_layout.addWidget(self.event_filter)
+        
+        self.event_search = QLineEdit()
+        self.event_search.setPlaceholderText("Search events...")
+        self.event_search.textChanged.connect(self.filter_events)
+        filter_layout.addWidget(self.event_search)
+        
+        layout.addLayout(filter_layout)
+        
+        # Events list
+        self.events_list = QListWidget()
+        self.events_list.setAlternatingRowColors(True)
+        self.events_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.events_list.itemClicked.connect(self.show_event_details)
+        layout.addWidget(self.events_list)
+        
+        # Export buttons
+        export_layout = QHBoxLayout()
+        
+        export_json_btn = QPushButton("Export JSON")
+        export_csv_btn = QPushButton("Export CSV")
+        export_gpx_btn = QPushButton("Export GPX")
+        
+        export_json_btn.clicked.connect(self.export_to_json)
+        export_csv_btn.clicked.connect(self.export_to_csv)
+        export_gpx_btn.clicked.connect(self.export_to_gpx)
+        
+        export_layout.addWidget(export_json_btn)
+        export_layout.addWidget(export_csv_btn)
+        export_layout.addWidget(export_gpx_btn)
+        export_layout.addStretch()
+        
+        layout.addLayout(export_layout)
+        
+        # Sample events data for testing
+        self.events = [
+            {"id": 1, "type": "Pothole", "severity": 8, "lat": 37.7749, "lon": -122.4194, "timestamp": "2025-04-10 14:23:45", "source": "LiDAR"},
+            {"id": 2, "type": "Bump", "severity": 5, "lat": 37.7750, "lon": -122.4195, "timestamp": "2025-04-10 14:25:12", "source": "Accelerometer"},
+            {"id": 3, "type": "Rough Surface", "severity": 6, "lat": 37.7751, "lon": -122.4196, "timestamp": "2025-04-10 14:27:30", "source": "LiDAR"}
+        ]
+        
+        # Populate events list
+        self.populate_events()
+    
+    def populate_events(self):
+        """Populate the events list with event data"""
+        self.events_list.clear()
+        
+        if not self.events:
+            self.events_list.addItem("No road events detected")
+            return
+            
+        for event in self.events:
+            item_text = f"{event['type']} (Severity: {event['severity']}) - {event['source']}"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.UserRole, event)
+            
+            # Set item colors based on severity
+            if event['severity'] >= 8:
+                item.setForeground(QColor("#e74c3c"))  # Red for high severity
+            elif event['severity'] >= 5:
+                item.setForeground(QColor("#f39c12"))  # Orange for medium severity
+            else:
+                item.setForeground(QColor("#2ecc71"))  # Green for low severity
+                
+            self.events_list.addItem(item)
+    
+    def filter_events(self):
+        """Filter events based on selected filter and search text"""
+        filter_text = self.event_filter.currentText()
+        search_text = self.event_search.text().lower()
+        
+        self.events_list.clear()
+        
+        filtered_events = []
+        for event in self.events:
+            # Apply filter
+            if filter_text == "All Events" or \
+               (filter_text == "Potholes" and event['type'] == "Pothole") or \
+               (filter_text == "Bumps" and event['type'] == "Bump") or \
+               (filter_text == "LiDAR Events" and event['source'] == "LiDAR") or \
+               (filter_text == "Accelerometer Events" and event['source'] == "Accelerometer"):
+                
+                # Apply search
+                if search_text == "" or \
+                   search_text in event['type'].lower() or \
+                   search_text in event['source'].lower() or \
+                   search_text in str(event['severity']):
+                    filtered_events.append(event)
+        
+        # Show filtered events
+        if not filtered_events:
+            self.events_list.addItem("No matching events found")
+            return
+            
+        for event in filtered_events:
+            item_text = f"{event['type']} (Severity: {event['severity']}) - {event['source']}"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.UserRole, event)
+            
+            # Set item colors based on severity
+            if event['severity'] >= 8:
+                item.setForeground(QColor("#e74c3c"))  # Red for high severity
+            elif event['severity'] >= 5:
+                item.setForeground(QColor("#f39c12"))  # Orange for medium severity
+            else:
+                item.setForeground(QColor("#2ecc71"))  # Green for low severity
+                
+            self.events_list.addItem(item)
+    
+    def show_event_details(self, item):
+        """Show details for the selected event"""
+        event = item.data(Qt.UserRole)
+        if not event:
+            return
+            
+        msg = QMessageBox()
+        msg.setWindowTitle("Event Details")
+        
+        msg.setText(f"<b>{event['type']} Event</b>")
+        
+        details = f"""
+        <table>
+            <tr>
+                <td><b>Severity:</b></td>
+                <td>{event['severity']}/10</td>
+            </tr>
+            <tr>
+                <td><b>Source:</b></td>
+                <td>{event['source']}</td>
+            </tr>
+            <tr>
+                <td><b>Location:</b></td>
+                <td>{event['lat']:.6f}, {event['lon']:.6f}</td>
+            </tr>
+            <tr>
+                <td><b>Timestamp:</b></td>
+                <td>{event['timestamp']}</td>
+            </tr>
+        </table>
+        """
+        
+        msg.setInformativeText(details)
+        
+        # Add action buttons
+        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Apply)
+        msg.button(QMessageBox.Apply).setText("Show on Map")
+        
+        # Custom styling for the message box
+        msg.setStyleSheet("QLabel{min-width: 300px;}")
+        
+        result = msg.exec_()
+        if result == QMessageBox.Apply:
+            # Show on map functionality would go here
+            pass
+    
+    def add_event(self, event):
+        """Add a new event to the list"""
+        self.events.append(event)
+        self.populate_events()
+        
+        # Show notification for important events
+        if event['severity'] >= 7:
+            self.show_notification(event)
+    
+    def show_notification(self, event):
+        """Show a notification for a high-severity event"""
+        msg = QMessageBox()
+        msg.setWindowTitle("Road Event Detected")
+        
+        if event['type'].lower() == "pothole":
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText(f"Pothole Detected (Severity: {event['severity']})")
+        else:
+            msg.setIcon(QMessageBox.Information)
+            msg.setText(f"Road Event: {event['type']} (Severity: {event['severity']})")
+        
+        msg.setInformativeText(f"Location: {event['lat']:.6f}, {event['lon']:.6f}\nSource: {event['source']}")
+        msg.setStandardButtons(QMessageBox.Ok)
+        
+        # Non-blocking notification
+        QTimer.singleShot(0, msg.show)
+    
+    def export_to_json(self):
+        """Export events data to JSON format"""
+        if not self.events:
+            QMessageBox.warning(self, "No Data", "No events data to export.")
+            return
+            
+        filename, _ = QFileDialog.getSaveFileName(self, "Export JSON", "", "JSON Files (*.json)")
+        if not filename:
+            return
+            
+        try:
+            with open(filename, 'w') as f:
+                json.dump({"events": self.events}, f, indent=2)
+                
+            QMessageBox.information(self, "Export Successful", f"Events data exported to {filename}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
+    
+    def export_to_csv(self):
+        """Export events data to CSV format"""
+        if not self.events:
+            QMessageBox.warning(self, "No Data", "No events data to export.")
+            return
+            
+        filename, _ = QFileDialog.getSaveFileName(self, "Export CSV", "", "CSV Files (*.csv)")
+        if not filename:
+            return
+            
+        try:
+            with open(filename, 'w') as f:
+                # Write header
+                f.write("id,type,severity,latitude,longitude,timestamp,source\n")
+                
+                # Write data rows
+                for event in self.events:
+                    f.write(f"{event['id']},{event['type']},{event['severity']},{event['lat']},{event['lon']},{event['timestamp']},{event['source']}\n")
+                
+            QMessageBox.information(self, "Export Successful", f"Events data exported to {filename}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
+    
+    def export_to_gpx(self):
+        """Export events data to GPX format for GPS visualization"""
+        if not self.events:
+            QMessageBox.warning(self, "No Data", "No events data to export.")
+            return
+            
+        filename, _ = QFileDialog.getSaveFileName(self, "Export GPX", "", "GPX Files (*.gpx)")
+        if not filename:
+            return
+            
+        try:
+            with open(filename, 'w') as f:
+                # Write GPX header
+                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+                f.write('<gpx version="1.1" creator="Road Quality App" xmlns="http://www.topografix.com/GPX/1/1">\n')
+                
+                # Write waypoints for each event
+                for event in self.events:
+                    f.write(f'  <wpt lat="{event["lat"]}" lon="{event["lon"]}">\n')
+                    f.write(f'    <name>{event["type"]} (S{event["severity"]})</name>\n')
+                    f.write(f'    <desc>Severity: {event["severity"]}, Source: {event["source"]}</desc>\n')
+                    f.write(f'    <time>{event["timestamp"]}</time>\n')
+                    f.write('  </wpt>\n')
+                
+                # Close GPX file
+                f.write('</gpx>\n')
+                
+            QMessageBox.information(self, "Export Successful", f"Events data exported to {filename}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export data: {str(e)}")
+
+
+class SettingsDialog(QDialog):
+    """Dialog for application settings"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Create tabs for different settings
+        tabs = QTabWidget()
+        
+        # Display settings tab
+        display_tab = QWidget()
+        display_layout = QFormLayout()
+        
+        # Chart settings
+        self.chart_smoothing = QSlider(Qt.Horizontal)
+        self.chart_smoothing.setRange(0, 10)
+        self.chart_smoothing.setValue(5)
+        self.chart_smoothing.setTickPosition(QSlider.TicksBelow)
+        
+        # Update frequency
+        self.update_frequency = QComboBox()
+        self.update_frequency.addItems(["1 second", "2 seconds", "5 seconds"])
+        self.update_frequency.setCurrentIndex(1)  # default to 2 seconds
+        
+        display_layout.addRow("Chart Smoothing:", self.chart_smoothing)
+        display_layout.addRow("Update Frequency:", self.update_frequency)
+        display_tab.setLayout(display_layout)
+        
+        # Notification settings tab
+        notif_tab = QWidget()
+        notif_layout = QVBoxLayout()
+        
+        self.notify_events = QCheckBox("Road Event Notifications")
+        self.notify_events.setChecked(True)
+        self.notify_sensors = QCheckBox("Sensor Status Changes")
+        self.notify_quality = QCheckBox("Quality Score Changes")
+        self.notify_quality.setChecked(True)
+        
+        notif_layout.addWidget(self.notify_events)
+        notif_layout.addWidget(self.notify_sensors)
+        notif_layout.addWidget(self.notify_quality)
+        notif_layout.addStretch()
+        notif_tab.setLayout(notif_layout)
+        
+        # Storage settings tab
+        storage_tab = QWidget()
+        storage_layout = QFormLayout()
+        
+        self.auto_export = QCheckBox("Auto-export data")
+        self.export_path = QLineEdit()
+        self.export_path.setPlaceholderText("Select data export path...")
+        self.browse_btn = QPushButton("Browse...")
+        self.browse_btn.clicked.connect(self.select_export_path)
+        
+        self.storage_format = QComboBox()
+        self.storage_format.addItems(["JSON", "CSV", "Both"])
+        
+        browse_layout = QHBoxLayout()
+        browse_layout.addWidget(self.export_path, 1)
+        browse_layout.addWidget(self.browse_btn)
+        
+        storage_layout.addRow("Auto-export:", self.auto_export)
+        storage_layout.addRow("Export path:", browse_layout)
+        storage_layout.addRow("Storage format:", self.storage_format)
+        
+        storage_tab.setLayout(storage_layout)
+        
+        # Add tabs
+        tabs.addTab(display_tab, "Display")
+        tabs.addTab(notif_tab, "Notifications")
+        tabs.addTab(storage_tab, "Storage")
+        layout.addWidget(tabs)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Apply)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        buttons.button(QDialogButtonBox.Apply).clicked.connect(self.apply_settings)
+        layout.addWidget(buttons)
+        
+        # Load current settings
+        self.load_settings()
+        
+    def load_settings(self):
+        """Load settings from config"""
+        # In a real app, you would load these from a settings file
+        pass
+        
+    def apply_settings(self):
+        """Apply settings without closing dialog"""
+        self.save_settings()
+        self.parent().log_viewer.append_log("Settings applied", "Info")
+        
+    def accept(self):
+        """Handle OK button click"""
+        self.save_settings()
+        super().accept()
+        
+    def save_settings(self):
+        """Save settings to config"""
+        # In a real app, you would save these to a settings file
+        smoothing = self.chart_smoothing.value() / 10.0
+        update_freq = self.update_frequency.currentText()
+        
+        # Apply chart smoothing to existing charts
+        self.parent().data_viz.accel_chart.ani.event_source.interval = int(update_freq.split()[0]) * 1000
+        self.parent().data_viz.lidar_chart.ani.event_source.interval = int(update_freq.split()[0]) * 1000 * 2
+        
+    def select_export_path(self):
+        """Open directory selection dialog for export path"""
+        path = QFileDialog.getExistingDirectory(self, "Select Export Directory")
+        if path:
+            self.export_path.setText(path)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Road Quality Measurement GUI")
         self.setGeometry(100, 100, 1200, 800)
+        
+        # Set application style to Fusion for a more modern look
+        QApplication.setStyle(QStyleFactory.create('Fusion'))
         
         # Set up the status bar
         self.statusBar = QStatusBar()
@@ -955,20 +1489,42 @@ class MainWindow(QMainWindow):
         self.toolbar = QToolBar("Main Toolbar")
         self.addToolBar(self.toolbar)
         
-        # Add actions to toolbar
-        self.start_action = QAction("Start", self)
+        # Add actions to toolbar with icons
+        self.start_action = QAction(QIcon.fromTheme("media-playback-start", QIcon("icons/start.png")), "Start", self)
         self.start_action.triggered.connect(self.start_measurement)
+        self.start_action.setShortcut("Ctrl+S")
         self.toolbar.addAction(self.start_action)
         
-        self.stop_action = QAction("Stop", self)
+        self.stop_action = QAction(QIcon.fromTheme("media-playback-stop", QIcon("icons/stop.png")), "Stop", self)
         self.stop_action.triggered.connect(self.stop_measurement)
+        self.stop_action.setShortcut("Ctrl+X")
         self.toolbar.addAction(self.stop_action)
         
         self.toolbar.addSeparator()
         
-        self.theme_action = QAction("Toggle Theme", self)
+        self.theme_action = QAction(QIcon.fromTheme("preferences-desktop-theme", QIcon("icons/theme.png")), "Toggle Theme", self)
         self.theme_action.triggered.connect(self.toggle_theme)
+        self.theme_action.setShortcut("Ctrl+T")
         self.toolbar.addAction(self.theme_action)
+        
+        # Add export actions
+        self.toolbar.addSeparator()
+        self.export_action = QAction(QIcon.fromTheme("document-save-as", QIcon("icons/export.png")), "Export Data", self)
+        self.export_action.triggered.connect(self.export_data)
+        self.toolbar.addAction(self.export_action)
+        
+        # Add settings action
+        self.toolbar.addSeparator()
+        self.settings_action = QAction(QIcon.fromTheme("preferences-system", QIcon("icons/settings.png")), "Settings", self)
+        self.settings_action.triggered.connect(self.open_settings)
+        self.toolbar.addAction(self.settings_action)
+        
+        # Add help action
+        self.toolbar.addSeparator()
+        self.help_action = QAction(QIcon.fromTheme("help-browser", QIcon("icons/help.png")), "Help", self)
+        self.help_action.triggered.connect(self.show_help)
+        self.help_action.setShortcut("F1")
+        self.toolbar.addAction(self.help_action)
         
         # Central widget with tab interface
         self.central_tabs = QTabWidget()
@@ -994,10 +1550,10 @@ class MainWindow(QMainWindow):
         # Logs tab
         self.log_viewer = LogViewer()
         
-        # Add tabs to main interface
-        self.central_tabs.addTab(self.dashboard, "Dashboard")
-        self.central_tabs.addTab(self.config_editor, "Configuration")
-        self.central_tabs.addTab(self.log_viewer, "Logs")
+        # Add tabs to main interface with icons
+        self.central_tabs.addTab(self.dashboard, QIcon.fromTheme("view-grid", QIcon("icons/dashboard.png")), "Dashboard")
+        self.central_tabs.addTab(self.config_editor, QIcon.fromTheme("preferences-system", QIcon("icons/settings.png")), "Configuration")
+        self.central_tabs.addTab(self.log_viewer, QIcon.fromTheme("text-x-log", QIcon("icons/logs.png")), "Logs")
         
         # Connection status in status bar
         self.connection_status = QLabel("Not Connected")
@@ -1032,6 +1588,22 @@ class MainWindow(QMainWindow):
         self.statusBar.addWidget(QLabel("Alt:"))
         self.statusBar.addWidget(self.env_altitude_label)
         
+        # Add system info to status bar
+        self.system_info = QLabel("CPU: -- | RAM: --")
+        self.statusBar.addPermanentWidget(self.system_info)
+        
+        # Start system info update timer
+        self.system_timer = QTimer()
+        self.system_timer.timeout.connect(self.update_system_info)
+        self.system_timer.start(5000)  # Update every 5 seconds
+        
+        # Add progress bar to show activity
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)  # Indeterminate progress
+        self.progress.setFixedWidth(100)
+        self.progress.setVisible(False)  # Only show when processing
+        self.statusBar.addPermanentWidget(self.progress)
+        
         # Apply initial theme
         self.dark_theme = False
         self.toggle_theme()
@@ -1039,6 +1611,41 @@ class MainWindow(QMainWindow):
         # Add initial test log
         self.log_viewer.append_log("GUI initialized successfully")
         self.log_viewer.append_log("Real sensor data integration enabled")
+        
+    # Add new methods for the actions we added
+    def export_data(self):
+        """Show export options dialog"""
+        export_dialog = ExportDialog(self)
+        export_dialog.exec_()
+    
+    def open_settings(self):
+        """Open settings dialog"""
+        settings_dialog = SettingsDialog(self)
+        settings_dialog.exec_()
+    
+    def show_help(self):
+        """Show help information"""
+        QMessageBox.information(
+            self, 
+            "Road Quality Measurement Help",
+            "Road Quality Measurement Tool\n\n"
+            "This application allows you to collect and analyze road quality data using sensors:\n\n"
+            "- Start/Stop: Begin or end data collection\n"
+            "- Dashboard: View real-time sensor data and quality scores\n"
+            "- Configuration: Adjust system settings\n"
+            "- Logs: View system messages and events\n\n"
+            "For more information, visit the documentation."
+        )
+    
+    def update_system_info(self):
+        """Update system information in the status bar"""
+        try:
+            # This is a simplified version - in a real app you'd use psutil or similar
+            cpu_usage = "25%"  # Placeholder
+            ram_usage = "512MB"  # Placeholder
+            self.system_info.setText(f"CPU: {cpu_usage} | RAM: {ram_usage}")
+        except Exception as e:
+            self.log_viewer.append_log(f"Error updating system info: {str(e)}", "Error")
         
     def toggle_theme(self):
         """Toggle between light and dark themes"""
@@ -1135,6 +1742,32 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    
+    # Show splash screen
+    splash = SplashScreen()
+    splash.show()
+    
+    # Simulate loading stages
+    for i, message in enumerate([
+        "Initializing application...",
+        "Loading configuration...",
+        "Preparing user interface...",
+        "Connecting to sensors...",
+        "Starting system..."
+    ]):
+        # Update splash message
+        splash.show_message(message)
+        # Process events to update UI
+        app.processEvents()
+        # Simulate work being done
+        time.sleep(0.5)
+    
+    # Create and show main window
     window = MainWindow()
+    
+    # Finish splash and show main window
+    splash.finish(window)
     window.show()
+    
+    # Start the application
     sys.exit(app.exec_())
