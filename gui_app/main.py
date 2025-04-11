@@ -19,6 +19,7 @@ from gui_app.widgets.sensor_status_widget import SensorStatusWidget
 from gui_app.widgets.data_visualizer import DataVisualizer
 from gui_app.widgets.config_editor import ConfigEditor
 from gui_app.widgets.log_viewer import LogViewer
+from gui_app.widgets.website_panel import WebsitePanel
 from gui_app.dialogs.export_dialog import ExportDialog
 from gui_app.dialogs.settings_dialog import SettingsDialog
 
@@ -101,10 +102,14 @@ class MainWindow(QMainWindow):
         # Logs tab
         self.log_viewer = LogViewer()
         
+        # Website tab
+        self.website_panel = WebsitePanel()
+        
         # Add tabs to main interface with icons
         self.central_tabs.addTab(self.dashboard, QIcon.fromTheme("view-grid", QIcon("icons/dashboard.png")), "Dashboard")
         self.central_tabs.addTab(self.config_editor, QIcon.fromTheme("preferences-system", QIcon("icons/settings.png")), "Configuration")
         self.central_tabs.addTab(self.log_viewer, QIcon.fromTheme("text-x-log", QIcon("icons/logs.png")), "Logs")
+        self.central_tabs.addTab(self.website_panel, QIcon.fromTheme("internet-web-browser", QIcon("icons/website.png")), "Website")
         
         # Connection status in status bar
         self.connection_status = QLabel("Not Connected")
