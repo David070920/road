@@ -92,33 +92,42 @@ class WebsitePanel(QWidget):
     def refresh_status(self):
         """Refresh the status of local and remote URLs"""
         try:
-            # Get web server status
-            response = requests.get('http://localhost:8080/remote_access', timeout=2)
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Update local URL
-                local_url = data.get('local_url', 'Not available')
-                self.local_url_label.setText(local_url)
-                
-                # Update remote URL and QR code
-                remote_status = data.get('status', 'inactive')
-                remote_url = data.get('tunnel_url', 'Not available')
-                
-                if remote_status == 'active':
-                    self.remote_status_label.setText("Remote access status: Active")
-                    self.remote_status_label.setStyleSheet("color: green;")
-                    self.remote_url_label.setText(remote_url)
+            # Check if web server is running before attempting to get status
+            if self.is_server_running():
+                # Get web server status
+                response = requests.get('http://localhost:8080/remote_access', timeout=2)
+                if response.status_code == 200:
+                    data = response.json()
                     
-                    # Generate and display QR code
-                    qr_url = f"https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl={remote_url}"
-                    self.update_qr_code(qr_url)
-                else:
-                    self.remote_status_label.setText("Remote access status: Inactive")
-                    self.remote_status_label.setStyleSheet("color: red;")
-                    self.remote_url_label.setText("Not available")
-                    self.qr_label.setText("QR Code not available")
+                    # Update local URL
+                    local_url = data.get('local_url', 'Not available')
+                    self.local_url_label.setText(local_url)
                     
+                    # Update remote URL and QR code
+                    remote_status = data.get('status', 'inactive')
+                    remote_url = data.get('tunnel_url', 'Not available')
+                    
+                    if remote_status == 'active':
+                        self.remote_status_label.setText("Remote access status: Active")
+                        self.remote_status_label.setStyleSheet("color: green;")
+                        self.remote_url_label.setText(remote_url)
+                        
+                        # Generate and display QR code
+                        qr_url = f"https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl={remote_url}"
+                        self.update_qr_code(qr_url)
+                    else:
+                        self.remote_status_label.setText("Remote access status: Inactive")
+                        self.remote_status_label.setStyleSheet("color: red;")
+                        self.remote_url_label.setText("Not available")
+                        self.qr_label.setText("QR Code not available")
+            else:
+                # Server is not running, update UI to indicate
+                self.local_url_label.setText("Server not running - Toggle Web Visualization first")
+                self.remote_status_label.setText("Remote access status: Server not running")
+                self.remote_status_label.setStyleSheet("color: orange;")
+                self.remote_url_label.setText("Not available")
+                self.qr_label.setText("Web server not running.\nClick 'Toggle Web Visualization' in toolbar to start.")
+                        
         except Exception as e:
             self.local_url_label.setText("Server not running")
             self.remote_status_label.setText(f"Error: {str(e)}")
@@ -158,3 +167,43 @@ class WebsitePanel(QWidget):
         if text and text != "Loading local URL..." and text != "Loading remote URL..." and text != "Not available" and text != "Server not running":
             from PyQt5.QtWidgets import QApplication
             QApplication.clipboard().setText(text)
+    
+    def toggle_server(self, enable=True):
+        """Toggle the web server on or off to save resources"""
+        try:
+            # Determine the endpoint based on desired action
+            endpoint = 'start_server' if enable else 'stop_server'
+            
+            # Send request to control server state
+            response = requests.post(f'http://localhost:8080/{endpoint}', timeout=2)
+            if response.status_code == 200:
+                if enable:
+                    self.server_status_label = QLabel("Server Status: Starting...")
+                    self.server_status_label.setStyleSheet("color: orange;")
+                    # Schedule a refresh to update status after server starts
+                    QTimer.singleShot(3000, self.refresh_status)
+                else:
+                    self.server_status_label = QLabel("Server Status: Stopping...")
+                    self.server_status_label.setStyleSheet("color: orange;")
+                    # Update UI immediately
+                    self.local_url_label.setText("Server not running (resources saved)")
+                    self.remote_status_label.setText("Remote access status: Inactive")
+                    self.remote_status_label.setStyleSheet("color: red;")
+                    self.remote_url_label.setText("Not available")
+                    self.qr_label.setText("Web server disabled to save resources")
+                
+                return True
+        except Exception as e:
+            if enable:
+                self.local_url_label.setText(f"Error starting server: {str(e)}")
+            else:
+                self.local_url_label.setText("Server may already be stopped")
+            return False
+            
+    def is_server_running(self):
+        """Check if the web server is currently running"""
+        try:
+            response = requests.get('http://localhost:8080/status', timeout=1)
+            return response.status_code == 200
+        except:
+            return False

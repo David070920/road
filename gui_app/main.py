@@ -37,6 +37,10 @@ class MainWindow(QMainWindow):
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
         
+        # Web server reference - only created when needed
+        self.web_server = None
+        self.web_thread = None
+        
         # Set up the toolbar
         self.toolbar = QToolBar("Main Toolbar")
         self.addToolBar(self.toolbar)
@@ -53,6 +57,14 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(self.stop_action)
         
         self.toolbar.addSeparator()
+        
+        # Add visualization toggle action
+        self.viz_mode_action = QAction(QIcon.fromTheme("view-web", QIcon("icons/web.png")), "Toggle Web Visualization", self)
+        self.viz_mode_action.setCheckable(True)
+        self.viz_mode_action.triggered.connect(self.toggle_visualization_mode)
+        self.viz_mode_action.setToolTip("Toggle between GUI and Web visualization to save resources")
+        self.viz_mode_action.setShortcut("Ctrl+W")
+        self.toolbar.addAction(self.viz_mode_action)
         
         self.theme_action = QAction(QIcon.fromTheme("preferences-desktop-theme", QIcon("icons/theme.png")), "Toggle Theme", self)
         self.theme_action.triggered.connect(self.toggle_theme)
@@ -229,6 +241,130 @@ class MainWindow(QMainWindow):
             # Set light theme (default)
             self.setPalette(QApplication.style().standardPalette())
             self.log_viewer.append_log("Light theme enabled")
+    
+    def toggle_visualization_mode(self):
+        """Toggle between GUI and Web visualization modes to save resources"""
+        try:
+            # Import config to modify it
+            from quality.config import Config
+            
+            if self.viz_mode_action.isChecked():
+                # Switch to Web visualization mode
+                self.log_viewer.append_log("Switching to Web visualization mode to save resources")
+                
+                # Update configuration to prioritize web updates
+                Config.USE_WEB_VISUALIZATION = True
+                self.log_viewer.append_log("Web data updates optimized for faster performance")
+                
+                # Disable GUI visualizations to save resources
+                if hasattr(self.data_viz, 'accel_chart') and self.data_viz.accel_chart:
+                    if hasattr(self.data_viz.accel_chart, 'ani'):
+                        self.data_viz.accel_chart.ani.pause()
+                        self.log_viewer.append_log("Paused accelerometer visualization")
+                
+                if hasattr(self.data_viz, 'lidar_chart') and self.data_viz.lidar_chart:
+                    if hasattr(self.data_viz.lidar_chart, 'ani'):
+                        self.data_viz.lidar_chart.ani.pause()
+                        self.log_viewer.append_log("Paused LiDAR visualization")
+                    
+                if hasattr(self.data_viz, 'map_chart') and self.data_viz.map_chart:
+                    if hasattr(self.data_viz.map_chart, 'ani'):
+                        self.data_viz.map_chart.ani.pause()
+                        self.log_viewer.append_log("Paused map visualization")
+                
+                # Create and start the web server
+                self.progress.setVisible(True)
+                self.statusBar.showMessage("Starting web server...", 3000)
+                
+                try:
+                    # Import necessary modules
+                    from quality.web.server import RoadQualityWebServer
+                    import threading
+                    
+                    # Create web server if it doesn't exist
+                    if not self.web_server:
+                        self.log_viewer.append_log("Creating web server instance...")
+                        self.web_server = RoadQualityWebServer(
+                            self.sensor_reader, 
+                            Config, 
+                            host=getattr(Config, 'WEB_SERVER_HOST', '0.0.0.0'), 
+                            port=getattr(Config, 'WEB_SERVER_PORT', 8080)
+                        )
+                        
+                        # Start the web server in a separate thread
+                        self.web_thread = threading.Thread(target=self.web_server.start, daemon=True)
+                        self.web_thread.start()
+                        self.log_viewer.append_log(f"Web server started on http://{getattr(Config, 'WEB_SERVER_HOST', '0.0.0.0')}:{getattr(Config, 'WEB_SERVER_PORT', 8080)}")
+                except Exception as e:
+                    self.log_viewer.append_log(f"Error starting web server: {str(e)}", "Error")
+                    QMessageBox.warning(self, "Error", f"Failed to start web server: {e}")
+                
+                QTimer.singleShot(3000, lambda: self.progress.setVisible(False))
+                
+                # Switch to the Website tab
+                self.central_tabs.setCurrentWidget(self.website_panel)
+                
+                # Update action text and tooltip
+                self.viz_mode_action.setText("Use GUI Visualization")
+                self.viz_mode_action.setToolTip("Switch back to GUI visualization mode")
+                
+                # Display a status message
+                self.statusBar.showMessage("Using web visualization to save resources", 5000)
+                
+                # Update website panel to ensure it's refreshed
+                self.website_panel.refresh_status()
+                
+            else:
+                # Switch back to GUI visualization mode
+                self.log_viewer.append_log("Switching back to GUI visualization mode")
+                
+                # Update configuration to prioritize GUI updates
+                Config.USE_WEB_VISUALIZATION = False
+                self.log_viewer.append_log("GUI visualization prioritized, web updates reduced")
+                
+                # Re-enable GUI visualizations
+                if hasattr(self.data_viz, 'accel_chart') and self.data_viz.accel_chart:
+                    if hasattr(self.data_viz.accel_chart, 'ani'):
+                        self.data_viz.accel_chart.ani.resume()
+                        self.log_viewer.append_log("Resumed accelerometer visualization")
+                
+                if hasattr(self.data_viz, 'lidar_chart') and self.data_viz.lidar_chart:
+                    if hasattr(self.data_viz.lidar_chart, 'ani'):
+                        self.data_viz.lidar_chart.ani.resume()
+                        self.log_viewer.append_log("Resumed LiDAR visualization")
+                    
+                if hasattr(self.data_viz, 'map_chart') and self.data_viz.map_chart:
+                    if hasattr(self.data_viz.map_chart, 'ani'):
+                        self.data_viz.map_chart.ani.resume()
+                        self.log_viewer.append_log("Resumed map visualization")
+                
+                # Shutdown the web server to save resources
+                self.progress.setVisible(True)
+                self.statusBar.showMessage("Stopping web server to save resources...", 3000)
+                
+                try:
+                    if self.web_server:
+                        self.log_viewer.append_log("Shutting down web server...")
+                        self.web_server.stop()
+                        self.web_server = None
+                        self.log_viewer.append_log("Web server stopped")
+                except Exception as e:
+                    self.log_viewer.append_log(f"Error stopping web server: {str(e)}", "Error")
+                
+                QTimer.singleShot(3000, lambda: self.progress.setVisible(False))
+                
+                # Switch to the Dashboard tab
+                self.central_tabs.setCurrentWidget(self.dashboard)
+                
+                # Update action text and tooltip
+                self.viz_mode_action.setText("Use Web Visualization")
+                self.viz_mode_action.setToolTip("Switch to web visualization to save resources")
+                
+                # Display a status message
+                self.statusBar.showMessage("Using GUI visualization", 5000)
+        except Exception as e:
+            self.log_viewer.append_log(f"Error toggling visualization mode: {str(e)}", "Error")
+            QMessageBox.warning(self, "Error", f"Failed to toggle visualization mode: {e}")
     
     def update_env_data(self, env_data):
         """Update environmental data displays"""

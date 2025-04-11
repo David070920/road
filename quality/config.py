@@ -16,6 +16,16 @@ class Config:
     ENABLE_LIDAR_GRAPH = True    # Enable/disable LiDAR visualization
     ENABLE_ACCEL_GRAPH = True    # Enable/disable accelerometer visualization
     
+    # Web/GUI Mode control
+    USE_WEB_VISUALIZATION = False  # If True, optimizes for web. If False, optimizes for GUI
+    OPTIMIZE_RESOURCES = True      # If True, reduces update frequency when not in active view
+    
+    # Resource optimization settings
+    BACKGROUND_UPDATE_MULTIPLIER = 5  # Multiply update interval by this when in background
+    WEB_ACTIVE_UPDATE_INTERVAL = 200  # Update interval when web is primary visualization (ms)
+    WEB_BACKGROUND_UPDATE_INTERVAL = 1000  # Update interval when web is secondary (ms)
+    GUI_BACKGROUND_UPDATE_INTERVAL = 2000  # Update interval for GUI when in background (ms)
+    
     # User and system information
     USER_LOGIN = "David070920"
     SYSTEM_START_TIME = "2025-03-29 11:17:21"
@@ -47,7 +57,7 @@ class Config:
     # Web server settings
     WEB_SERVER_HOST = '0.0.0.0'  # Listen on all interfaces
     WEB_SERVER_PORT = 8080       # Default port (will try next available if busy)
-    WEB_UPDATE_INTERVAL = 200    # Update interval in milliseconds
+    WEB_UPDATE_INTERVAL = 200    # Update interval in milliseconds (legacy setting)
     
     # Web server advanced options
     WEB_CONNECTION_TIMEOUT = 30  # Socket connection timeout in seconds

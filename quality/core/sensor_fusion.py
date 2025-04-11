@@ -542,19 +542,8 @@ class SensorFusion:
                                 else:
                                     logger.info("Visualization disabled in configuration")
                                 
-                                # Initialize and start the web server
-                                try:
-                                    self.web_server = RoadQualityWebServer(
-                                        self, 
-                                        self.config, 
-                                        host=self.config.WEB_SERVER_HOST, 
-                                        port=self.config.WEB_SERVER_PORT
-                                    )
-                                    web_thread = threading.Thread(target=self.web_server.start, daemon=True)
-                                    web_thread.start()
-                                    logger.info(f"Web interface available at http://{self.config.WEB_SERVER_HOST}:{self.config.WEB_SERVER_PORT}")
-                                except Exception as web_error:
-                                    logger.error(f"Web server initialization failed: {web_error}")
+                                # Don't automatically start web server - let GUI handle this
+                                logger.info("Web server initialization skipped - will be started on demand by GUI")
                                 
                                 # Skip map opening if disabled
                                 if getattr(self.config, 'ENABLE_GPS_MAP', False) and not self.safe_mode:

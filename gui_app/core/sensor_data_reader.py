@@ -1,7 +1,7 @@
 import threading
 import time
 import queue
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 
 # Add project root to sys.path
 import os
@@ -40,6 +40,26 @@ class SensorDataReader(QThread):
         self.lidar_update_interval = 0.1   # 100ms
         self.gps_update_interval = 0.5     # 500ms
         self.env_update_interval = 1.0     # 1s
+        
+        # Add snapshot lock to mimic SensorFusion API for web server
+        self.snapshot_lock = threading.RLock()
+        
+        # Add cached data for web server access
+        self._cached_snapshot = {
+            'accel_data': [],
+            'lidar_data': [],
+            'gps_data': {'lat': 0, 'lon': 0, 'alt': 0, 'timestamp': 0},
+            'env_data': {'temperature': None, 'humidity': None, 'pressure': None, 'altitude': None},
+            'quality': {'lidar': 0, 'accel': 0, 'combined': 0},
+            'classification': 'Unknown',
+            'events': [],
+            'timestamp': 0
+        }
+        
+        # Update cache timer
+        self.cache_timer = QTimer()
+        self.cache_timer.timeout.connect(self.update_data_cache)
+        self.cache_timer.start(200)  # Update cache every 200ms
         
     def initialize(self):
         """Initialize the SensorFusion system"""
@@ -244,3 +264,56 @@ class SensorDataReader(QThread):
         """Stop the thread safely"""
         self.running = False
         self.wait(1000)  # Wait up to 1 second for thread to finish
+
+    # Add web server adapter methods
+    def update_data_cache(self):
+        """Update the cached data for web server access"""
+        if self.sensor_fusion:
+            data_snapshot = self.get_data_snapshot()
+            
+            with self.snapshot_lock:
+                self._cached_snapshot['accel_data'] = data_snapshot[0] if data_snapshot[0] else []
+                self._cached_snapshot['lidar_data'] = data_snapshot[1] if data_snapshot[1] else []
+                self._cached_snapshot['gps_data'] = data_snapshot[2] if data_snapshot[2] else {'lat': 0, 'lon': 0, 'alt': 0, 'timestamp': 0}
+                self._cached_snapshot['env_data'] = data_snapshot[3] if data_snapshot[3] else {'temperature': None, 'humidity': None, 'pressure': None, 'altitude': None}
+                self._cached_snapshot['timestamp'] = time.time()
+                
+                # Get quality metrics if analyzer is available
+                if hasattr(self.sensor_fusion, 'analyzer'):
+                    self._cached_snapshot['quality']['lidar'] = getattr(self.sensor_fusion.analyzer, 'lidar_quality_score', 0)
+                    self._cached_snapshot['quality']['accel'] = getattr(self.sensor_fusion.analyzer, 'current_quality_score', 0)
+                    self._cached_snapshot['quality']['combined'] = getattr(self.sensor_fusion.analyzer, 'combined_quality_score', 0)
+                    self._cached_snapshot['classification'] = self.sensor_fusion.analyzer.get_road_classification()
+                    self._cached_snapshot['events'] = getattr(self.sensor_fusion.analyzer, 'events', [])[-20:]
+    
+    # Web server adapter properties
+    @property
+    def analyzer(self):
+        """Provide access to analyzer for web server"""
+        if self.sensor_fusion and hasattr(self.sensor_fusion, 'analyzer'):
+            return self.sensor_fusion.analyzer
+        return None
+    
+    @property
+    def accel_data(self):
+        """Provide access to accelerometer data for web server"""
+        with self.snapshot_lock:
+            return self._cached_snapshot['accel_data']
+    
+    @property
+    def lidar_data(self):
+        """Provide access to LiDAR data for web server"""
+        with self.snapshot_lock:
+            return self._cached_snapshot['lidar_data']
+    
+    @property
+    def gps_data(self):
+        """Provide access to GPS data for web server"""
+        with self.snapshot_lock:
+            return self._cached_snapshot['gps_data']
+    
+    @property
+    def env_data(self):
+        """Provide access to environmental data for web server"""
+        with self.snapshot_lock:
+            return self._cached_snapshot['env_data']

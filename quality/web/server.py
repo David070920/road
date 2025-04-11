@@ -147,35 +147,87 @@ class RoadQualityWebServer:
                                   user_info=self.config.USER_LOGIN,
                                   session_time=self.config.SYSTEM_START_TIME)
         
+        @self.app.route('/status')
+        def status():
+            """Simple endpoint to check if the server is running"""
+            return flask.jsonify({'status': 'ok', 'timestamp': time.time()})
+        
         @self.app.route('/api/data')
         def get_data():
             """API endpoint to get current data snapshot"""
-            with self.sensor_fusion.snapshot_lock:
-                data = {
-                    'lidar_quality': self.sensor_fusion.analyzer.lidar_quality_score,
-                    'accel_quality': self.sensor_fusion.analyzer.current_quality_score,
-                    'classification': self.sensor_fusion.analyzer.get_road_classification(),
-                    'gps': {
-                        'lat': self.sensor_fusion.gps_data['lat'],
-                        'lon': self.sensor_fusion.gps_data['lon']
-                    },
-                    'events': self.sensor_fusion.analyzer.get_recent_events(count=10)
-                }
-            return flask.jsonify(data)
+            try:
+                with self.sensor_fusion.snapshot_lock:
+                    # Get quality metrics and classification
+                    lidar_quality = 0
+                    accel_quality = 0
+                    classification = "Unknown"
+                    events = []
+                    
+                    if hasattr(self.sensor_fusion, 'analyzer') and self.sensor_fusion.analyzer:
+                        lidar_quality = getattr(self.sensor_fusion.analyzer, 'lidar_quality_score', 0)
+                        accel_quality = getattr(self.sensor_fusion.analyzer, 'current_quality_score', 0)
+                        
+                        if hasattr(self.sensor_fusion.analyzer, 'get_road_classification'):
+                            classification = self.sensor_fusion.analyzer.get_road_classification()
+                        
+                        if hasattr(self.sensor_fusion.analyzer, 'get_recent_events'):
+                            events = self.sensor_fusion.analyzer.get_recent_events(count=10)
+                        elif hasattr(self.sensor_fusion.analyzer, 'events'):
+                            events = getattr(self.sensor_fusion.analyzer, 'events', [])[-10:]
+                    
+                    # Get GPS data
+                    gps_data = {'lat': 0, 'lon': 0}
+                    if hasattr(self.sensor_fusion, 'gps_data'):
+                        gps_data = {
+                            'lat': self.sensor_fusion.gps_data.get('lat', 0),
+                            'lon': self.sensor_fusion.gps_data.get('lon', 0)
+                        }
+                    
+                    data = {
+                        'lidar_quality': lidar_quality,
+                        'accel_quality': accel_quality,
+                        'classification': classification,
+                        'gps': gps_data,
+                        'events': events
+                    }
+                
+                return flask.jsonify(data)
+            except Exception as e:
+                logger.error(f"Error fetching API data: {e}")
+                return flask.jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/system')
         def get_system_status_api():
             """API endpoint to get system status information"""
-            status_data = get_system_status()
-            
-            # Add data points information
-            status_data['data_points'] = {
-                'accel': len(self.sensor_fusion.accel_data),
-                'lidar': len(self.sensor_fusion.lidar_data),
-                'gps': len(self.sensor_fusion.analyzer.gps_quality_history) if hasattr(self.sensor_fusion.analyzer, 'gps_quality_history') else 0
-            }
-            
-            return flask.jsonify(status_data)
+            try:
+                status_data = get_system_status()
+                
+                # Add data points information safely
+                status_data['data_points'] = {
+                    'accel': 0,
+                    'lidar': 0,
+                    'gps': 0
+                }
+                
+                # Get data point counts safely
+                try:
+                    if hasattr(self.sensor_fusion, 'accel_data'):
+                        status_data['data_points']['accel'] = len(self.sensor_fusion.accel_data or [])
+                    
+                    if hasattr(self.sensor_fusion, 'lidar_data'):
+                        status_data['data_points']['lidar'] = len(self.sensor_fusion.lidar_data or [])
+                    
+                    if (hasattr(self.sensor_fusion, 'analyzer') and 
+                        self.sensor_fusion.analyzer and 
+                        hasattr(self.sensor_fusion.analyzer, 'gps_quality_history')):
+                        status_data['data_points']['gps'] = len(self.sensor_fusion.analyzer.gps_quality_history)
+                except Exception as e:
+                    logger.error(f"Error getting data point counts: {e}")
+                
+                return flask.jsonify(status_data)
+            except Exception as e:
+                logger.error(f"Error fetching system status: {e}")
+                return flask.jsonify({'error': str(e)}), 500
         
         @self.app.route('/remote_access')
         def remote_access():
@@ -198,6 +250,45 @@ class RoadQualityWebServer:
         def gps_position_redirect():
             """Redirect to home for removed GPS map file"""
             return flask.redirect('/')
+
+        @self.app.route('/start_server', methods=['POST'])
+        def start_server():
+            """Start the data update loop with optimized settings for web visualization"""
+            try:
+                # Set web visualization as primary mode
+                setattr(self.config, 'USE_WEB_VISUALIZATION', True)
+                
+                # Make sure the update loop is running
+                if not self.thread or not self.thread.is_alive():
+                    self.thread = threading.Thread(target=self.data_update_loop)
+                    self.thread.daemon = True
+                    self.thread.start()
+                    logger.info("Started data update loop with web-optimized settings")
+                else:
+                    # Force optimization settings to update immediately
+                    self._last_optimization_check = 0
+                    logger.info("Data update loop already running, optimizing for web")
+                
+                return flask.jsonify({'status': 'ok', 'message': 'Web server optimized for web visualization'})
+            except Exception as e:
+                logger.error(f"Error starting server: {e}")
+                return flask.jsonify({'status': 'error', 'message': str(e)}), 500
+        
+        @self.app.route('/stop_server', methods=['POST'])
+        def stop_server():
+            """Stop the data update loop to save resources when web is not primary"""
+            try:
+                # Set GUI as primary mode
+                setattr(self.config, 'USE_WEB_VISUALIZATION', False)
+                
+                # Force update of optimization settings on next check
+                self._last_optimization_check = 0
+                logger.info("Web server optimized for GUI mode (reduced updates)")
+                
+                return flask.jsonify({'status': 'ok', 'message': 'Web server in background mode'})
+            except Exception as e:
+                logger.error(f"Error stopping server: {e}")
+                return flask.jsonify({'status': 'error', 'message': str(e)}), 500
     
     def register_socket_events(self):
         """Register WebSocket event handlers"""
@@ -224,27 +315,69 @@ class RoadQualityWebServer:
         """Emit updated sensor data to connected clients"""
         try:
             with self.sensor_fusion.snapshot_lock:
+                # Get quality metrics - handle both SensorFusion and SensorDataReader objects
+                lidar_quality = 0
+                accel_quality = 0
+                combined_quality = 0
+                classification = "Unknown"
+                events = []
+                
+                if hasattr(self.sensor_fusion, 'analyzer') and self.sensor_fusion.analyzer:
+                    lidar_quality = getattr(self.sensor_fusion.analyzer, 'lidar_quality_score', 0)
+                    accel_quality = getattr(self.sensor_fusion.analyzer, 'current_quality_score', 0)
+                    combined_quality = getattr(self.sensor_fusion.analyzer, 'combined_quality_score', 0)
+                    
+                    # Get road classification and events if available
+                    if hasattr(self.sensor_fusion.analyzer, 'get_road_classification'):
+                        classification = self.sensor_fusion.analyzer.get_road_classification()
+                    
+                    # Get events if available
+                    if hasattr(self.sensor_fusion.analyzer, 'events'):
+                        events = getattr(self.sensor_fusion.analyzer, 'events', [])[-20:]
+                    elif hasattr(self.sensor_fusion.analyzer, 'get_recent_events'):
+                        events = self.sensor_fusion.analyzer.get_recent_events(count=20)
+                
+                # Get GPS data
+                gps_data = {'lat': 0, 'lon': 0}
+                if hasattr(self.sensor_fusion, 'gps_data'):
+                    gps_data = {
+                        'lat': self.sensor_fusion.gps_data.get('lat', 0),
+                        'lon': self.sensor_fusion.gps_data.get('lon', 0)
+                    }
+                
+                # Get environmental data
+                env_data = {
+                    'temperature': None,
+                    'humidity': None,
+                    'pressure': None,
+                    'altitude': None
+                }
+                if hasattr(self.sensor_fusion, 'env_data'):
+                    env_data = {
+                        'temperature': self.sensor_fusion.env_data.get('temperature'),
+                        'humidity': self.sensor_fusion.env_data.get('humidity'),
+                        'pressure': self.sensor_fusion.env_data.get('pressure'),
+                        'altitude': self.sensor_fusion.env_data.get('altitude')
+                    }
+                
+                # Get accelerometer data
+                accel_data = []
+                if hasattr(self.sensor_fusion, 'accel_data'):
+                    accel_data = list(self.sensor_fusion.accel_data)[-50:] if self.sensor_fusion.accel_data else []
+                
+                # Build the data object
                 data = {
                     'timestamp': time.time(),
-                    'lidar_quality': self.sensor_fusion.analyzer.lidar_quality_score,
-                    'accel_data': list(self.sensor_fusion.accel_data)[-50:] if self.sensor_fusion.accel_data else [],
-                    'classification': self.sensor_fusion.analyzer.get_road_classification(),
-                    'gps': {
-                        'lat': self.sensor_fusion.gps_data['lat'],
-                        'lon': self.sensor_fusion.gps_data['lon']
-                    },
-                    # Add environmental data
-                    'env': {
-                        'temperature': self.sensor_fusion.env_data['temperature'],
-                        'humidity': self.sensor_fusion.env_data['humidity'],
-                        'pressure': self.sensor_fusion.env_data['pressure'],
-                        'altitude': self.sensor_fusion.env_data['altitude']
-                    },
-                    # Add combined road quality score
-                    'combined_quality_score': getattr(self.sensor_fusion.analyzer, 'combined_quality_score', None),
-                    # Add recent detected events
-                    'recent_events': getattr(self.sensor_fusion.analyzer, 'events', [])[-20:]
+                    'lidar_quality': lidar_quality,
+                    'accel_quality': accel_quality,
+                    'accel_data': accel_data,
+                    'classification': classification,
+                    'gps': gps_data,
+                    'env': env_data,
+                    'combined_quality_score': combined_quality,
+                    'recent_events': events
                 }
+                
             # Only emit if there are connected clients to save resources
             if self.connected_clients > 0:
                 self.socketio.emit('data_update', data)
@@ -259,11 +392,12 @@ class RoadQualityWebServer:
                 
         except Exception as e:
             logger.error(f"Error emitting data update: {e}")
+            
         # Save data to database
         try:
             if hasattr(self, 'data_storage') and self.data_storage:
                 ts = data.get('timestamp', time.time())
-                lat = data.get('gps', {}).get('lat', 0)
+                lat = data.get('gps', {}).get('lat', 0) 
                 lon = data.get('gps', {}).get('lon', 0)
                 quality_score = data.get('combined_quality_score', None)
                 classification = data.get('classification', '')
@@ -287,16 +421,78 @@ class RoadQualityWebServer:
         """Background thread that emits data updates periodically"""
         logger.info("Starting data update loop thread")
         self._debug_counter = 0
+        self._last_optimization_check = time.time()
         
         while self.running:
             try:
-                self.emit_data_update()
+                # Only emit data update if we have connected clients
+                if self.connected_clients > 0:
+                    self.emit_data_update()
+                
+                    # Add a periodic debug log to verify data is being sent
+                    if hasattr(self, '_debug_counter'):
+                        self._debug_counter += 1
+                        if self._debug_counter % 20 == 0:  # Log every 20 updates
+                            logger.debug(f"Emitted data update #{self._debug_counter} to {self.connected_clients} client(s)")
+                    else:
+                        self._debug_counter = 1
             except Exception as e:
                 logger.error(f"Error in data update loop: {e}")
                 
-            # Use config for update interval if available, otherwise default to 200ms
-            update_interval = getattr(self.config, 'WEB_UPDATE_INTERVAL', 500) / 1000.0
-            time.sleep(update_interval)
+            # Use adaptive update interval based on visualization mode
+            # Check the current mode - this is more efficient than checking on every iteration
+            current_time = time.time()
+            if current_time - self._last_optimization_check > 5.0:  # Check every 5 seconds
+                self._last_optimization_check = current_time
+                self._update_optimization_settings()
+            
+            # Use the current update interval
+            time.sleep(self._get_current_update_interval())
+    
+    def _update_optimization_settings(self):
+        """Update optimization settings based on current configuration"""
+        try:
+            # Track whether settings have changed
+            settings_changed = False
+            
+            # Check if web visualization is active
+            web_is_primary = getattr(self.config, 'USE_WEB_VISUALIZATION', False)
+            
+            # Store the setting so we don't have to access it repeatedly
+            if not hasattr(self, '_web_is_primary') or self._web_is_primary != web_is_primary:
+                self._web_is_primary = web_is_primary
+                settings_changed = True
+            
+            # If settings changed, log it
+            if settings_changed:
+                if self._web_is_primary:
+                    logger.info("Web is primary visualization - using faster update rate")
+                else:
+                    logger.info("GUI is primary visualization - using reduced web update rate")
+        except Exception as e:
+            logger.error(f"Error updating optimization settings: {e}")
+            # Fallback to default settings
+            self._web_is_primary = False
+    
+    def _get_current_update_interval(self):
+        """Get the current update interval based on configuration"""
+        # Default to legacy setting if none of our new configs exist
+        default_interval = getattr(self.config, 'WEB_UPDATE_INTERVAL', 500) / 1000.0
+        
+        try:
+            # Use optimized settings if available
+            if hasattr(self, '_web_is_primary') and self._web_is_primary:
+                # Web is primary visualization - use faster updates
+                interval_ms = getattr(self.config, 'WEB_ACTIVE_UPDATE_INTERVAL', 200)
+            else:
+                # GUI is primary visualization - use slower updates for web
+                interval_ms = getattr(self.config, 'WEB_BACKGROUND_UPDATE_INTERVAL', 1000)
+            
+            # Convert to seconds
+            return interval_ms / 1000.0
+        except Exception as e:
+            logger.error(f"Error calculating update interval: {e}")
+            return default_interval
     
     def start(self):
         """Start the web server"""
