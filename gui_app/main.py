@@ -7,6 +7,12 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QColor, QPalette
 
+# Enable high-DPI scaling
+if hasattr(Qt, 'AA_EnableHighDpiScaling'):
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
 # Add project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
@@ -28,7 +34,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Road Quality Measurement GUI")
-        self.setGeometry(100, 100, 1200, 800)
+        
+        # Make the window more responsive to screen size
+        self.resize_for_screen()
         
         # Set application style to Fusion for a more modern look
         QApplication.setStyle(QStyleFactory.create('Fusion'))
@@ -180,6 +188,26 @@ class MainWindow(QMainWindow):
         self.log_viewer.append_log("GUI initialized successfully")
         self.log_viewer.append_log("Real sensor data integration enabled")
         
+    def resize_for_screen(self):
+        """Make the window properly sized and positioned for the current screen"""
+        # Get the available screen geometry
+        desktop = QApplication.desktop()
+        screen_rect = desktop.availableGeometry(self)
+        
+        # Calculate a sensible default size (75% of screen)
+        width = int(screen_rect.width() * 0.75)
+        height = int(screen_rect.height() * 0.75)
+        
+        # Position in the center of the screen
+        x = (screen_rect.width() - width) // 2
+        y = (screen_rect.height() - height) // 2
+        
+        # Set window geometry
+        self.setGeometry(x, y, width, height)
+        
+        # Ensure the window is resizable
+        self.setMinimumSize(800, 600)  # Set a sensible minimum size
+
     # Add new methods for the actions we added
     def export_data(self):
         """Show export options dialog"""

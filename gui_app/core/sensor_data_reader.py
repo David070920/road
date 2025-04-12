@@ -171,12 +171,48 @@ class SensorDataReader(QThread):
             # Get the latest accelerometer value
             latest_accel = accel_data[-1] if accel_data else 0
             
-            # Get quality metrics
-            quality_score = getattr(self.sensor_fusion.analyzer, 'combined_quality_score', None)
-            if quality_score is None:
-                quality_score = getattr(self.sensor_fusion.analyzer, 'current_quality_score', 50)
+            # Get quality metrics - use LiDAR quality score instead of combined score
+            quality_score = None
+            if hasattr(self.sensor_fusion, 'analyzer'):
+                # Use LiDAR quality score as the primary score as requested
+                quality_score = getattr(self.sensor_fusion.analyzer, 'lidar_quality_score', None)
                 
-            classification = self.sensor_fusion.analyzer.get_road_classification()
+                # Log the LiDAR quality score for debugging
+                if quality_score is not None:
+                    self.log_signal.emit(f"LiDAR road quality score: {quality_score:.1f}", "Debug")
+                else:
+                    self.log_signal.emit("LiDAR quality score not available", "Debug")
+                
+                # Fall back to combined score if LiDAR score is not available
+                if quality_score is None:
+                    quality_score = getattr(self.sensor_fusion.analyzer, 'combined_quality_score', None)
+                    if quality_score is not None:
+                        self.log_signal.emit(f"Using combined quality score as fallback: {quality_score:.1f}", "Debug")
+                
+                # Fall back to current_quality_score (accelerometer-based) if still None
+                if quality_score is None:
+                    quality_score = getattr(self.sensor_fusion.analyzer, 'current_quality_score', None)
+                    if quality_score is not None:
+                        self.log_signal.emit(f"Using accel quality score as fallback: {quality_score:.1f}", "Debug")
+            
+            # Default if all else fails
+            if quality_score is None:
+                quality_score = 75
+                self.log_signal.emit("No quality scores available, using default value", "Debug")
+                
+            # Get road classification based on LiDAR
+            classification = "Unknown"
+            if hasattr(self.sensor_fusion, 'analyzer') and hasattr(self.sensor_fusion.analyzer, 'get_road_classification'):
+                # Use the LiDAR-specific road classification
+                classification = self.sensor_fusion.analyzer.get_road_classification()
+            else:
+                # Simple classification based on quality score
+                if quality_score >= 75:
+                    classification = "Good"
+                elif quality_score >= 50:
+                    classification = "Fair"
+                else:
+                    classification = "Poor"
             
             # Emit the data
             self.accel_data_signal.emit(latest_accel, quality_score, classification)
@@ -272,6 +308,7 @@ class SensorDataReader(QThread):
             data_snapshot = self.get_data_snapshot()
             
             with self.snapshot_lock:
+                # Update basic sensor data
                 self._cached_snapshot['accel_data'] = data_snapshot[0] if data_snapshot[0] else []
                 self._cached_snapshot['lidar_data'] = data_snapshot[1] if data_snapshot[1] else []
                 self._cached_snapshot['gps_data'] = data_snapshot[2] if data_snapshot[2] else {'lat': 0, 'lon': 0, 'alt': 0, 'timestamp': 0}
@@ -280,10 +317,27 @@ class SensorDataReader(QThread):
                 
                 # Get quality metrics if analyzer is available
                 if hasattr(self.sensor_fusion, 'analyzer'):
-                    self._cached_snapshot['quality']['lidar'] = getattr(self.sensor_fusion.analyzer, 'lidar_quality_score', 0)
-                    self._cached_snapshot['quality']['accel'] = getattr(self.sensor_fusion.analyzer, 'current_quality_score', 0)
-                    self._cached_snapshot['quality']['combined'] = getattr(self.sensor_fusion.analyzer, 'combined_quality_score', 0)
-                    self._cached_snapshot['classification'] = self.sensor_fusion.analyzer.get_road_classification()
+                    # Get base quality scores from analyzer
+                    lidar_score = getattr(self.sensor_fusion.analyzer, 'lidar_quality_score', 0)
+                    accel_score = getattr(self.sensor_fusion.analyzer, 'current_quality_score', 0)
+                    combined_score = getattr(self.sensor_fusion.analyzer, 'combined_quality_score', 0)
+                    
+                    # Update the cached quality scores
+                    self._cached_snapshot['quality']['lidar'] = lidar_score
+                    self._cached_snapshot['quality']['accel'] = accel_score
+                    
+                    # Use lidar_score as the combined score as requested
+                    # Only fall back to combined_score if lidar_score is not available
+                    if lidar_score > 0:
+                        self._cached_snapshot['quality']['combined'] = lidar_score
+                    else:
+                        self._cached_snapshot['quality']['combined'] = combined_score
+                    
+                    # Get road classification using the LiDAR-specific method
+                    classification = self.sensor_fusion.analyzer.get_road_classification()
+                    
+                    # Store the classification
+                    self._cached_snapshot['classification'] = classification
                     self._cached_snapshot['events'] = getattr(self.sensor_fusion.analyzer, 'events', [])[-20:]
     
     # Web server adapter properties

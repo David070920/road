@@ -1,5 +1,5 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QGroupBox, QHBoxLayout, QGridLayout, QLabel
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QGroupBox, QHBoxLayout, QGridLayout, QLabel, QSizePolicy
+from PyQt5.QtCore import Qt, QSize
 
 from gui_app.widgets.accelerometer_chart import AccelerometerChart
 from gui_app.widgets.lidar_chart import LidarChart
@@ -13,32 +13,43 @@ class DataVisualizer(QWidget):
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
         
+        # Enable size policy to make the widget scale properly
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
         # Create tabs for different visualizations
         self.tabs = QTabWidget()
+        self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         # Accelerometer tab with real-time chart
         self.accel_widget = QWidget()
+        self.accel_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         accel_layout = QVBoxLayout()
         self.accel_chart = AccelerometerChart()
+        self.accel_chart.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         accel_layout.addWidget(self.accel_chart)
         self.accel_widget.setLayout(accel_layout)
         
         # LiDAR tab with real-time chart
         self.lidar_widget = QWidget()
+        self.lidar_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         lidar_layout = QVBoxLayout()
         self.lidar_chart = LidarChart()
+        self.lidar_chart.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         lidar_layout.addWidget(self.lidar_chart)
         self.lidar_widget.setLayout(lidar_layout)
         
         # Map view tab with GPS track visualization
         self.map_widget = QWidget()
+        self.map_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         map_layout = QVBoxLayout()
         self.map_chart = MapChart()
+        self.map_chart.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         map_layout.addWidget(self.map_chart)
         self.map_widget.setLayout(map_layout)
         
         # Events tab with road events panel
         self.events_widget = EventsPanel()
+        self.events_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         # Add tabs
         self.tabs.addTab(self.accel_widget, "Accelerometer")
@@ -50,6 +61,7 @@ class DataVisualizer(QWidget):
         
         # Quality indicator
         quality_group = QGroupBox("Road Quality Score")
+        quality_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         quality_layout = QHBoxLayout()
         
         # Quality gauge
@@ -85,7 +97,18 @@ class DataVisualizer(QWidget):
         
         quality_group.setLayout(quality_layout)
         
+        # Make quality group height fixed to prevent it from taking too much space
+        quality_group.setMaximumHeight(150)
+        
         self.layout.addWidget(quality_group)
+        
+    def sizeHint(self):
+        """Provide size hint for proper scaling"""
+        return QSize(800, 600)  # Default recommended size
+        
+    def minimumSizeHint(self):
+        """Provide minimum size hint for proper scaling"""
+        return QSize(400, 300)  # Minimum usable size
         
     def update_accel_data(self, value, quality_score=None, classification=None):
         """Update accelerometer chart with new data"""
@@ -111,3 +134,17 @@ class DataVisualizer(QWidget):
     def update_gps_data(self, lat, lon):
         """Update map with new GPS point"""
         self.map_chart.add_gps_point(lat, lon)
+        
+    def resizeEvent(self, event):
+        """Handle resize events to adjust chart sizes"""
+        super().resizeEvent(event)
+        
+        # Notify charts to adjust their sizes if they have a resize method
+        if hasattr(self.accel_chart, 'handle_resize'):
+            self.accel_chart.handle_resize()
+            
+        if hasattr(self.lidar_chart, 'handle_resize'):
+            self.lidar_chart.handle_resize()
+            
+        if hasattr(self.map_chart, 'handle_resize'):
+            self.map_chart.handle_resize()

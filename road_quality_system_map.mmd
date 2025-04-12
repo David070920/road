@@ -1,0 +1,46 @@
+flowchart TD
+ subgraph Hardware["Hardware"]
+        LIDAR["LIDAR Sensor"]
+        ACCEL["Accelerometer"]
+        GPS["GPS optional"]
+  end
+ subgraph Acquisition["Acquisition"]
+        LIDAR_AQ["quality/acquisition/lidar_acquisition.py"]
+        ACCEL_AQ["quality/acquisition/accel_acquisition.py"]
+        GPS_AQ["quality/acquisition/gps_acquisition.py"]
+  end
+ subgraph Core["Core"]
+        SENSOR_FUSION["quality/core/sensor_fusion.py"]
+        DATA_STRUCT["quality/core/data_structures.py"]
+  end
+ subgraph Analysis["Analysis"]
+        ANALYZER["quality/analysis/road_quality_analyzer.py"]
+  end
+ subgraph Storage["Storage"]
+        DATA_STORAGE["quality/data_storage.py"]
+  end
+ subgraph Visualization["Visualization"]
+        ACCEL_PLOT["quality/visualization/accel_plots.py"]
+        LIDAR_PLOT["quality/visualization/lidar_plots.py"]
+        MAP_CHART["gui_app/widgets/map_chart.py"]
+  end
+ subgraph GUI["GUI"]
+        MAIN_GUI["gui_app/main.py"]
+        ACCEL_CHART["gui_app/widgets/accelerometer_chart.py"]
+        LIDAR_CHART["gui_app/widgets/lidar_chart.py"]
+        DATA_VIZ["gui_app/widgets/data_visualizer.py"]
+  end
+    MAP_CHART --> MAIN_GUI
+    LIDAR --> LIDAR_AQ
+    ACCEL --> ACCEL_AQ
+    GPS --> GPS_AQ
+    LIDAR_AQ --> SENSOR_FUSION
+    ACCEL_AQ --> SENSOR_FUSION
+    GPS_AQ --> SENSOR_FUSION
+    SENSOR_FUSION --> ANALYZER
+    ANALYZER --> DATA_STORAGE & ACCEL_PLOT & LIDAR_PLOT & MAP_CHART
+    DATA_STORAGE --> DATA_VIZ
+    DATA_VIZ --> MAIN_GUI
+    ACCEL_CHART --> MAIN_GUI
+    LIDAR_CHART --> MAIN_GUI
+    LIDAR_PLOT ~~~ ACCEL_CHART
