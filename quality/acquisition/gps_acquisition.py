@@ -8,8 +8,29 @@ def gps_thread_func(serial_port, gps_data_lock, gps_data, stop_event, config, ma
     """Thread function for GPS acquisition"""
     logger.debug("GPS thread started")
     last_map_update = 0
+    last_data_log = 0
+    
+    # Force a logging interval even without GPS updates
+    log_interval = getattr(config, 'GPS_QUALITY_LOG_INTERVAL', 2.0)  # Default 2 seconds
+    force_log_timer = time.time()
+    
     while not stop_event.is_set():
         try:
+            current_time = time.time()
+            
+            # Check if we need to force a log entry even without new GPS data
+            if (sensor_fusion and sensor_fusion.analyzer and 
+                current_time - force_log_timer >= log_interval):
+                force_log_timer = current_time
+                # Use current GPS data (even if zeros) for logging
+                with gps_data_lock:
+                    current_gps = dict(gps_data)  # Make a copy
+                try:
+                    # Log data regardless of GPS values
+                    sensor_fusion.analyzer.log_gps_quality_color(current_gps)
+                except Exception as e:
+                    logger.error(f"Error logging GPS quality data: {e}")
+                
             if serial_port is None:
                 time.sleep(0.2)
                 continue
@@ -31,7 +52,6 @@ def gps_thread_func(serial_port, gps_data_lock, gps_data, stop_event, config, ma
                     })
                 
                 # Check if it's time to update the map
-                current_time = time.time()
                 if (map_update_func is not None and 
                     current_time - last_map_update >= config.GPS_MAP_UPDATE_INTERVAL and
                     getattr(config, 'ENABLE_GPS_MAP', False)):
@@ -40,6 +60,10 @@ def gps_thread_func(serial_port, gps_data_lock, gps_data, stop_event, config, ma
                         map_update_func(gps_data, config, sensor_fusion.analyzer if sensor_fusion else None)
                     except Exception as e:
                         logger.error(f"Error updating GPS map: {e}")
+                
+                # Reset force log timer when we have actual GPS updates
+                # This avoids duplicate logging right after a GPS update
+                force_log_timer = current_time
                 
                 logger.debug(f"GPS: {gps_data}")
                 

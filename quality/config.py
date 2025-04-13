@@ -5,6 +5,8 @@ class Config:
     # General settings
     MAX_DATA_POINTS = 100  # Maximum data points to store in memory
     GPS_MAP_UPDATE_INTERVAL = 10   # GPS map update interval in seconds
+    GPS_QUALITY_LOG_INTERVAL = 2.0  # GPS quality logging interval in seconds
+    GPS_QUALITY_LOG_FILE = "road_quality_map.csv"  # Default filename for quality log
     
     # Visualization performance settings
     LIDAR_UPDATE_INTERVAL = 10  # LiDAR visualization update interval in ms
