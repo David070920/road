@@ -1,9 +1,19 @@
 import os
 import requests
+import io
+import tempfile
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                            QPushButton, QGroupBox, QLineEdit, QFormLayout)
-from PyQt5.QtCore import Qt, QTimer
+                            QPushButton, QGroupBox, QLineEdit, QFormLayout,
+                            QMessageBox)
+from PyQt5.QtCore import Qt, QTimer, QByteArray
 from PyQt5.QtGui import QPixmap, QImage
+
+# Add qrcode import for local QR code generation
+try:
+    import qrcode
+    HAS_QRCODE = True
+except ImportError:
+    HAS_QRCODE = False
 
 class WebsitePanel(QWidget):
     """Widget for displaying web server links and QR codes"""
@@ -113,8 +123,7 @@ class WebsitePanel(QWidget):
                         self.remote_url_label.setText(remote_url)
                         
                         # Generate and display QR code
-                        qr_url = f"https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl={remote_url}"
-                        self.update_qr_code(qr_url)
+                        self.update_qr_code(remote_url)
                     else:
                         self.remote_status_label.setText("Remote access status: Inactive")
                         self.remote_status_label.setStyleSheet("color: red;")
@@ -135,18 +144,69 @@ class WebsitePanel(QWidget):
             self.remote_url_label.setText("Not available")
             self.qr_label.setText("QR Code not available")
     
-    def update_qr_code(self, qr_url):
-        """Download and display the QR code"""
+    def update_qr_code(self, url_to_encode):
+        """Generate and display the QR code"""
         try:
-            response = requests.get(qr_url)
-            if response.status_code == 200:
-                qr_image = QImage.fromData(response.content)
-                qr_pixmap = QPixmap.fromImage(qr_image)
-                self.qr_label.setPixmap(qr_pixmap.scaled(200, 200, Qt.KeepAspectRatio))
+            # Remove the old Google Charts API URL and use direct URL
+            self.qr_label.setText("Generating QR Code...")
+            
+            # Check if we have the qrcode library
+            if HAS_QRCODE:
+                # Generate QR code locally
+                qr = qrcode.QRCode(
+                    version=1,
+                    error_correction=qrcode.constants.ERROR_CORRECT_L,
+                    box_size=10,
+                    border=4,
+                )
+                qr.add_data(url_to_encode)
+                qr.make(fit=True)
+
+                # Create PIL image
+                img = qr.make_image(fill_color="black", back_color="white")
+                
+                # Save to temporary file
+                temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                try:
+                    img_path = temp_file.name
+                    img.save(img_path)
+                    
+                    # Load into QPixmap
+                    qr_pixmap = QPixmap(img_path)
+                    if not qr_pixmap.isNull():
+                        self.qr_label.setPixmap(qr_pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    else:
+                        self.qr_label.setText("Failed to generate QR code image")
+                    
+                    # Cleanup temporary file
+                    temp_file.close()
+                    try:
+                        os.unlink(img_path)
+                    except:
+                        pass
+                    
+                except Exception as e:
+                    self.qr_label.setText(f"QR Generation Error: {str(e)}")
+                    print(f"QR code generation error: {str(e)}")
             else:
-                self.qr_label.setText(f"QR Error: {response.status_code}")
+                # Fallback if qrcode library is not installed
+                self.qr_label.setText(
+                    "QR code library not installed.\n"
+                    "Install with: pip install qrcode[pil]"
+                )
+                
+                # Try to install the library automatically
+                try:
+                    self.qr_label.setText("Attempting to install QR code library...")
+                    import subprocess
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "qrcode[pil]"])
+                    self.qr_label.setText("QR code library installed! Reload the application.")
+                except Exception as e:
+                    self.qr_label.setText(f"Could not install qrcode library: {str(e)}\nPlease install manually.")
+        
         except Exception as e:
             self.qr_label.setText(f"QR Error: {str(e)}")
+            print(f"QR Code exception: {str(e)}")
     
     def open_local_url(self):
         """Open the local URL in a web browser"""
