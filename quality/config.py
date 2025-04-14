@@ -13,6 +13,12 @@ class Config:
     ACCEL_UPDATE_INTERVAL = 300  # Accelerometer visualization update interval in ms
     MAX_FRAME_SKIP = 2     # Maximum number of frames to skip for smoother rendering
     
+    # LiDAR visualization fine-tuning
+    LIDAR_CHART_UPDATE_INTERVAL = 0.01  # Time between visual refreshes in seconds (was hardcoded as 0.2)
+    LIDAR_CHART_CHECK_INTERVAL = 10   # How often to check for updates in ms (was hardcoded as 100)
+    LIDAR_DATA_BATCH_INTERVAL = 0.01    # Time between data batch updates in seconds (was hardcoded as 0.2)
+    LIDAR_MAX_POINTS = 120            # Maximum number of points to display (was hardcoded as 120)
+    
     # Visualization settings
     ENABLE_VISUALIZATION = True  # Master switch to enable/disable all visualization graphs
     ENABLE_LIDAR_GRAPH = True    # Enable/disable LiDAR visualization

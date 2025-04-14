@@ -10,6 +10,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from quality.config import Config
 from quality.core.sensor_fusion import SensorFusion
 from quality.analysis.road_quality_analyzer import RoadQualityAnalyzer
 
@@ -17,7 +18,8 @@ class SensorDataReader(QThread):
     """Thread to read data from the SensorFusion module"""
     # Define signals for data updates
     accel_data_signal = pyqtSignal(object, object, object)  # value, quality, classification
-    lidar_data_signal = pyqtSignal(float, float)  # angle, distance
+    # Updated signal for batch LiDAR data
+    lidar_data_signal = pyqtSignal(object)  # list of (angle, distance) tuples
     gps_data_signal = pyqtSignal(float, float)  # lat, lon
     env_data_signal = pyqtSignal(object)  # env_data dict
     sensor_status_signal = pyqtSignal(str, bool)  # sensor_name, is_connected
@@ -37,7 +39,10 @@ class SensorDataReader(QThread):
         
         # Minimum time between updates (in seconds)
         self.accel_update_interval = 0.05  # 50ms
-        self.lidar_update_interval = 0.1   # 100ms
+        
+        # Use config value for LiDAR update interval
+        self.lidar_update_interval = Config.LIDAR_DATA_BATCH_INTERVAL
+        
         self.gps_update_interval = 0.5     # 500ms
         self.env_update_interval = 1.0     # 1s
         
@@ -220,7 +225,7 @@ class SensorDataReader(QThread):
             self.log_signal.emit(f"Error processing accelerometer data: {str(e)}", "Error")
     
     def process_lidar_data(self, lidar_data):
-        """Process and emit LiDAR data"""
+        """Process and emit LiDAR data in batches for better performance"""
         if not lidar_data:
             return
             
@@ -231,14 +236,30 @@ class SensorDataReader(QThread):
         self.last_lidar_ts = current_time
         
         try:
-            # Process each LiDAR point and emit
+            # Filter points to those in our desired range (315°-360° or 0°-45°)
+            filtered_points = []
             for point in lidar_data:
                 angle_deg = point[0]
                 distance = point[1]
                 
-                # Only emit points in our desired range (315°-360° or 0°-45°)
+                # Only include points in our desired range
                 if (0 <= angle_deg <= 45) or (315 <= angle_deg <= 360):
-                    self.lidar_data_signal.emit(angle_deg, distance)
+                    filtered_points.append((angle_deg, distance))
+            
+            # Emit all points in a single batch
+            if filtered_points:
+                # Limit to a reasonable number of points to prevent performance issues
+                max_points = 180  # One point per half-degree in our 90° FOV
+                if len(filtered_points) > max_points:
+                    # Sample evenly across the available points
+                    step = len(filtered_points) // max_points
+                    filtered_points = filtered_points[::step][:max_points]
+                
+                # Log the number of points being sent
+                self.log_signal.emit(f"Sending batch of {len(filtered_points)} LiDAR points", "Debug")
+                
+                # Send the entire batch at once
+                self.lidar_data_signal.emit(filtered_points)
         except Exception as e:
             self.log_signal.emit(f"Error processing LiDAR data: {str(e)}", "Error")
     

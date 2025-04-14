@@ -127,9 +127,15 @@ class DataVisualizer(QWidget):
             else:  # Poor
                 self.quality_value.setStyleSheet("font-size: 32pt; font-weight: bold; color: #e74c3c;")
     
-    def update_lidar_data(self, angle, distance):
-        """Update LiDAR chart with new data point"""
-        self.lidar_chart.add_data_point(angle, distance)
+    def update_lidar_data(self, data):
+        """Update LiDAR chart with new data - can handle both single points and batches"""
+        if isinstance(data, tuple) and len(data) == 2:
+            # Legacy mode - single point (angle, distance)
+            angle, distance = data
+            self.lidar_chart.add_data_point(angle, distance)
+        else:
+            # New batch mode - data is a list of points
+            self.lidar_chart.add_data_batch(data)
     
     def update_gps_data(self, lat, lon):
         """Update map with new GPS point"""
