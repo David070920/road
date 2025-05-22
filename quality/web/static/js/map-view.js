@@ -89,6 +89,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Handle incoming data updates
     function handleDataUpdate(data) {
         if (!map) return;
+console.debug('Received GPS payload:', data);
+        const debugElem = document.getElementById('debug-gps');
+        if (debugElem) {
+            debugElem.textContent = JSON.stringify(data, null, 2);
+        }
         
         // Check if we have GPS data
         if (data.gps && data.gps.lat !== 0 && data.gps.lon !== 0) {

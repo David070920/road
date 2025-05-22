@@ -7,11 +7,13 @@ from flask_socketio import SocketIO
 import threading
 import time
 import logging
+logging.getLogger().setLevel(logging.DEBUG)
 import json
 import os
 import socket
 
 logger = logging.getLogger("WebServer")
+logger.setLevel(logging.DEBUG)
 
 # Import ngrok helper
 try:
@@ -151,6 +153,23 @@ class RoadQualityWebServer:
         def status():
             """Simple endpoint to check if the server is running"""
             return flask.jsonify({'status': 'ok', 'timestamp': time.time()})
+ 
+        @self.app.route('/gps_data', methods=['POST'])
+        def receive_gps_data():
+            """Receive raw GPS payloads from Tasker app and log for debug"""
+            try:
+                tstamp = time.strftime('%Y-%m-%d %H:%M:%S')
+                raw_body = flask.request.get_data(as_text=True)
+                logger.debug(f"[{tstamp}] /gps_data raw body: {raw_body}")
+                logger.debug(f"[{tstamp}] /gps_data headers: {dict(flask.request.headers)}")
+                logger.debug(f"[{tstamp}] /gps_data is_json: {flask.request.is_json}")
+                payload = flask.request.get_json(force=True)
+                logger.debug(f"[{tstamp}] /gps_data parsed object: {payload}")
+                logger.debug(f"[{tstamp}] Raw GPS payload: {json.dumps(payload)}")
+                return flask.jsonify({'status': 'received'}), 200
+            except Exception as e:
+                logger.error(f"Error in /gps_data handler: {e}")
+                return flask.jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/data')
         def get_data():
