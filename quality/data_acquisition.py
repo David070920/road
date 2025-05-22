@@ -1,10 +1,45 @@
 import time
 import threading
-import pynmea2
 import logging
 from quality.io.i2c_utils import get_accel_data  # Fix import path
+from quality.acquisition.network_gps_receiver import start_network_gps_server # Import server start function
+from quality.acquisition.gps_acquisition import gps_thread_func as network_gps_thread_func # Import the modified gps_thread_func
 
 logger = logging.getLogger("SensorFusion")
+
+# Placeholder for initialize_sensors or similar setup function
+# This function would be called at application startup.
+def initialize_sensors_and_network_gps(config):
+    """
+    Initializes sensors and starts the network GPS server.
+    This is a conceptual placement; actual integration might be in run.py or a main setup routine.
+    """
+    logger.info("Initializing sensors and starting Network GPS server...")
+
+    # Start the Network GPS Receiver Server
+    # Host and port can be made configurable via config.py
+    network_gps_host = getattr(config, 'NETWORK_GPS_HOST', '0.0.0.0')
+    network_gps_port = getattr(config, 'NETWORK_GPS_PORT', 5001)
+    
+    # Run the server in a separate thread so it doesn't block
+    server_thread = threading.Thread(
+        target=start_network_gps_server,
+        args=(network_gps_host, network_gps_port),
+        daemon=True # Ensure thread exits when main program exits
+    )
+    server_thread.start()
+    logger.info(f"Network GPS server started on {network_gps_host}:{network_gps_port}")
+
+    # ... existing sensor initialization logic would go here ...
+    # For example, initializing LiDAR, Accelerometer, etc.
+    # lidar_device = initialize_lidar(config)
+    # i2c_bus = initialize_i2c(config)
+    
+    # The GPS hardware initialization (initialize_gps) will be removed or modified
+    # in hardware/gps_init.py. No serial port is needed for network GPS.
+
+    # Return any initialized objects if necessary
+    # return lidar_device, i2c_bus
 
 def filter_lidar_angles(scan_data, config):
     """Filter LiDAR data to only include points within specified angle ranges"""
@@ -68,48 +103,27 @@ def lidar_thread_func(lidar_device, lidar_data_lock, lidar_data, stop_event, con
     
     logger.info("LiDAR thread stopped")
 
-def gps_thread_func(gps_serial_port, gps_data_lock, gps_data, stop_event, config, update_gps_map, sensor_instance):
-    """Thread function for GPS data acquisition"""
-    logger.info("GPS thread started")
-    while not stop_event.is_set():
-        try:
-            if gps_serial_port is None:
-                time.sleep(0.2)
-                continue
-                
-            # Fetch the GPS data
-            raw_data = gps_serial_port.readline().decode().strip()
-            
-            if raw_data.find('GGA') > 0:
-                gps_message = pynmea2.parse(raw_data)
-                
-                # Update shared data with lock
-                with gps_data_lock:
-                    gps_data.update({
-                        "timestamp": gps_message.timestamp,
-                        "lat": round(gps_message.latitude, 6),
-                        "lon": round(gps_message.longitude, 6),
-                        "alt": gps_message.altitude,
-                        "sats": gps_message.num_sats
-                    })
-                
-                # Check if it's time to update the map
-                current_time = time.time()
-                if current_time - sensor_instance.last_map_update >= config.GPS_MAP_UPDATE_INTERVAL:
-                    # Pass the analyzer to the map update function
-                    update_gps_map(gps_data, config, getattr(sensor_instance, 'analyzer', None))
-                    sensor_instance.last_map_update = current_time
-                
-                # Comment out or change to debug to stop printing GPS data
-                # logger.info(f"GPS: {gps_data}")
-                
-        except Exception as e:
-            logger.debug(f"Error in GPS thread: {e}")
-            
-        # Sleep to prevent high CPU usage
-        time.sleep(0.2)
-        
-    logger.info("GPS thread stopped")
+# The old gps_thread_func is removed.
+# The new network_gps_thread_func (aliased from gps_acquisition.py) will be used instead.
+# It will be started in a similar way to other sensor threads, but without a serial_port argument.
+# Example of how it might be started (actual start logic is usually in run.py or a main class):
+#
+# from quality.acquisition.gps_acquisition import gps_thread_func as network_gps_thread_func
+#
+# gps_thread = threading.Thread(
+#     target=network_gps_thread_func,
+#     args=(
+#         None,  # serial_port (no longer used for network GPS)
+#         gps_data_lock,
+#         gps_data_shared_dict,
+#         stop_event,
+#         config,
+#         map_update_function_callback, # e.g., self.update_gps_map_data
+#         sensor_fusion_instance
+#     ),
+#     daemon=True
+# )
+# gps_thread.start()
 
 def accel_thread_func(i2c_bus, accel_data_lock, accel_data, stop_event, config):
     """Thread function for accelerometer data acquisition"""

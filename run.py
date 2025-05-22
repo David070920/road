@@ -13,6 +13,7 @@ import logging
 import traceback
 import faulthandler
 from quality import SensorFusion
+from quality.data_acquisition import initialize_sensors_and_network_gps # Import the new setup function
 
 # Enable faulthandler to help debug segmentation faults
 faulthandler.enable()
@@ -43,8 +44,14 @@ def main():
         os.environ["MPLBACKEND"] = "Agg"
     
     try:
+        # Initialize sensors and start the Network GPS server
+        # This function should be called before SensorFusion is instantiated if SensorFusion
+        # relies on the server being up or on configurations set by it.
+        # For now, we call it here. Adjust if SensorFusion needs to pass config to it.
+        initialize_sensors_and_network_gps(config)
+
         # Create the sensor fusion system
-        sensor_fusion = SensorFusion(safe_mode=False)
+        sensor_fusion = SensorFusion(safe_mode=False) # SensorFusion will now use the network GPS
 
         # If visualization is enabled, start it
         if getattr(config, 'ENABLE_VISUALIZATION', False):
@@ -55,7 +62,12 @@ def main():
                 sensor_fusion.accel_data_lock,
                 config,
                 analyzer=sensor_fusion.analyzer,
-                analysis_lock=sensor_fusion.analysis_lock
+                analysis_lock=sensor_fusion.analysis_lock,
+                # Pass GPS data and lock for map visualization if needed by setup_visualization
+                # This depends on how setup_visualization handles GPS map updates.
+                # Assuming it might need direct access or SensorFusion handles it internally.
+                # gps_data=sensor_fusion.gps_data,
+                # gps_data_lock=sensor_fusion.gps_data_lock
             )
         else:
             # Run headless mode

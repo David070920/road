@@ -48,10 +48,10 @@ class Config:
     LIDAR_FILTER_ANGLES = [(0, 15), (345, 360)]  # Angles to keep (min, max)
     
     # GPS settings
-    GPS_PORT = '/dev/ttyACM0'
-    GPS_BAUD_RATE = 9600
-    GPS_TIMEOUT = 0.5
     
+# Network GPS Receiver settings
+    NETWORK_GPS_HOST = '0.0.0.0'  # Host for the Network GPS Flask server
+    NETWORK_GPS_PORT = 5001       # Port for the Network GPS Flask server
     # ICM20948 settings
     ICM20948_ADDRESS = 0x69
     ICM20948_WHO_AM_I = 0x00
