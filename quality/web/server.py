@@ -11,6 +11,7 @@ logging.getLogger().setLevel(logging.DEBUG)
 import json
 import os
 import socket
+from datetime import datetime
 
 logger = logging.getLogger("WebServer")
 logger.setLevel(logging.DEBUG)
@@ -172,6 +173,54 @@ class RoadQualityWebServer:
                     'altitude': payload.get('altitude'),
                     'satellites': payload.get('satellites', payload.get('sats', None))
                 }
+                
+                # Update the SensorFusion/SensorDataReader GPS data to ensure data is synchronized
+                # Handle both SensorFusion and SensorDataReader classes
+                if self.sensor_fusion:
+                    # Check if we're using SensorFusion or SensorDataReader
+                    if hasattr(self.sensor_fusion, 'gps_data_lock'):
+                        # SensorFusion case
+                        try:
+                            with self.sensor_fusion.gps_data_lock:
+                                self.sensor_fusion.gps_data['lat'] = self.latest_gps_data['lat']
+                                self.sensor_fusion.gps_data['lon'] = self.latest_gps_data['lon']
+                                self.sensor_fusion.gps_data['alt'] = self.latest_gps_data.get('altitude')
+                                self.sensor_fusion.gps_data['sats'] = self.latest_gps_data.get('satellites')
+                                self.sensor_fusion.gps_data['timestamp'] = time.time()
+                        except Exception as sync_error:
+                            logger.error(f"Error updating SensorFusion GPS data: {sync_error}")
+                    else:
+                        # SensorDataReader case
+                        try:
+                            with self.sensor_fusion.snapshot_lock:
+                                if hasattr(self.sensor_fusion, '_cached_snapshot') and isinstance(self.sensor_fusion._cached_snapshot, dict):
+                                    self.sensor_fusion._cached_snapshot['gps_data'] = {
+                                        'lat': self.latest_gps_data['lat'],
+                                        'lon': self.latest_gps_data['lon'],
+                                        'alt': self.latest_gps_data.get('altitude'),
+                                        'sats': self.latest_gps_data.get('satellites'),
+                                        'timestamp': time.time()
+                                    }
+                        except Exception as sync_error:
+                            logger.error(f"Error updating SensorDataReader GPS data: {sync_error}")
+                
+                # DIRECT LOG: Log GPS data directly to CSV file when we receive it from Tasker
+                lat = self.latest_gps_data['lat']
+                lon = self.latest_gps_data['lon']
+                
+                # Only log if we have valid coordinates
+                if lat != 0 and lon != 0:
+                    # Get the current quality score from the analyzer if available
+                    quality_score = 80  # Default quality score
+                    if hasattr(self.sensor_fusion, 'analyzer') and self.sensor_fusion.analyzer:
+                        if hasattr(self.sensor_fusion.analyzer, 'lidar_quality_score'):
+                            quality_score = self.sensor_fusion.analyzer.lidar_quality_score
+                        elif hasattr(self.sensor_fusion.analyzer, 'combined_quality_score'):
+                            quality_score = self.sensor_fusion.analyzer.combined_quality_score
+                    
+                    # Log the GPS data with the current quality score
+                    self.log_gps_to_csv(lat, lon, quality_score)
+                
                 self.emit_data_update()
                 logger.debug(f"[{tstamp}] /gps_data parsed object: {payload}")
                 logger.debug(f"[{tstamp}] Raw GPS payload: {json.dumps(payload)}")
@@ -614,3 +663,53 @@ class RoadQualityWebServer:
             func()
         except:
             logger.warning("Could not shut down Werkzeug server gracefully")
+
+    def log_gps_to_csv(self, lat, lon, quality_score=80):
+        """Log GPS data directly to CSV file in the logs directory."""
+        try:
+            # Set up the logs directory path
+            logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
+                                  "logs")
+            
+            # Create logs directory if it doesn't exist
+            if not os.path.exists(logs_dir):
+                os.makedirs(logs_dir)
+                logger.info(f"Created logs directory: {logs_dir}")
+            
+            # Set the output file path in the logs directory
+            output_file = os.path.join(logs_dir, "data.csv")
+            
+            # Convert quality score to color (0-100 scale)
+            color = "#00FF00"  # Default green
+            if quality_score <= 50:
+                # Red stays at FF, green increases from 00 to FF
+                red = 255
+                green = int((quality_score / 50) * 255)
+                blue = 0
+                color = f"#{red:02X}{green:02X}{blue:02X}"
+            else:
+                # Red decreases from FF to 00, green stays at FF
+                red = int(((100 - quality_score) / 50) * 255)
+                green = 255
+                blue = 0
+                color = f"#{red:02X}{green:02X}{blue:02X}"
+            
+            # Check if file exists to write header
+            file_exists = os.path.isfile(output_file)
+            
+            # Write to CSV file
+            with open(output_file, "a") as f:
+                # Write header if file doesn't exist
+                if not file_exists:
+                    f.write("latitude,longitude,quality_score,color,timestamp\n")
+                
+                # Write data row
+                timestamp = datetime.now().isoformat()
+                f.write(f"{lat},{lon},{quality_score},{color},{timestamp}\n")
+                
+            logger.info(f"Directly logged GPS data to {output_file}: lat={lat}, lon={lon}, quality={quality_score}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error logging GPS data to CSV: {e}")
+            return False

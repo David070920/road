@@ -5,8 +5,24 @@ from collections import deque
 from datetime import datetime
 import time
 import os
+import sys
+
+# Add a global reference to find the web server module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from quality.web.server import RoadQualityWebServer  # Import to access the web server class
 
 logger = logging.getLogger("SensorFusion")
+
+# Add a global variable to track all web server instances
+_WEB_SERVER_INSTANCES = []
+
+# Hook into the RoadQualityWebServer initialization
+original_init = RoadQualityWebServer.__init__
+def patched_init(self, *args, **kwargs):
+    result = original_init(self, *args, **kwargs)
+    _WEB_SERVER_INSTANCES.append(self)
+    return result
+RoadQualityWebServer.__init__ = patched_init
 
 class RoadQualityAnalyzer:
     def __init__(self, config, sensor_fusion=None):
@@ -155,6 +171,93 @@ class RoadQualityAnalyzer:
             
         except Exception as e:
             logger.error(f"Error logging road quality data: {e}")
+            return False
+
+    def log_data_to_csv(self, gps_data):
+        """Log road quality data to a CSV file in the logs directory.
+        
+        This method logs the latest GPS coordinates (latitude and longitude),
+        quality score, color representation of the quality score, and timestamp.
+        
+        Args:
+            gps_data (dict): Dictionary containing GPS data with lat and lon
+            
+        Returns:
+            bool: True if log was successful, False otherwise
+        """
+        try:
+            # Set up the logs directory path
+            logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
+                                  "logs")
+            
+            # Create logs directory if it doesn't exist
+            if not os.path.exists(logs_dir):
+                os.makedirs(logs_dir)
+                logger.info(f"Created logs directory: {logs_dir}")
+            
+            # Set the output file path in the logs directory
+            output_file = os.path.join(logs_dir, "data.csv")
+            
+            # Get the current quality score
+            quality_score = self.combined_quality_score
+            
+            # Convert quality score to color
+            color = self.quality_to_color(quality_score)
+            
+            # Get GPS coordinates with priority to the web server data
+            lat = 0
+            lon = 0
+            
+            # Try to get GPS data from the tracked web server instances
+            if _WEB_SERVER_INSTANCES:
+                for web_server in _WEB_SERVER_INSTANCES:
+                    if hasattr(web_server, 'latest_gps_data'):
+                        lat = web_server.latest_gps_data.get('lat', 0)
+                        lon = web_server.latest_gps_data.get('lon', 0)
+                        if lat != 0 and lon != 0:
+                            logger.debug(f"Using tracked web server GPS data: lat={lat}, lon={lon}")
+                            break
+            
+            # If still no valid coordinates, try direct access through sensor_fusion
+            if lat == 0 and lon == 0 and hasattr(self, 'sensor_fusion') and self.sensor_fusion:
+                if hasattr(self.sensor_fusion, 'web_server') and self.sensor_fusion.web_server:
+                    web_server_gps = getattr(self.sensor_fusion.web_server, 'latest_gps_data', None)
+                    if web_server_gps and isinstance(web_server_gps, dict):
+                        lat = web_server_gps.get('lat', 0)
+                        lon = web_server_gps.get('lon', 0)
+                        logger.debug(f"Using sensor_fusion.web_server GPS data: lat={lat}, lon={lon}")
+            
+            # If still no coordinates, try the sensor_fusion.gps_data
+            if lat == 0 and lon == 0 and hasattr(self, 'sensor_fusion') and self.sensor_fusion:
+                if hasattr(self.sensor_fusion, 'gps_data'):
+                    lat = self.sensor_fusion.gps_data.get('lat', 0)
+                    lon = self.sensor_fusion.gps_data.get('lon', 0)
+                    logger.debug(f"Using sensor_fusion.gps_data: lat={lat}, lon={lon}")
+            
+            # Last resort, use provided gps_data parameter
+            if lat == 0 and lon == 0 and gps_data and isinstance(gps_data, dict):
+                lat = gps_data.get('lat', 0)
+                lon = gps_data.get('lon', 0)
+                logger.debug(f"Using provided gps_data: lat={lat}, lon={lon}")
+            
+            # Check if file exists to write header
+            file_exists = os.path.isfile(output_file)
+            
+            # Write to CSV file
+            with open(output_file, "a") as f:
+                # Write header if file doesn't exist
+                if not file_exists:
+                    f.write("latitude,longitude,quality_score,color,timestamp\n")
+                
+                # Write data row
+                timestamp = datetime.now().isoformat()
+                f.write(f"{lat},{lon},{quality_score},{color},{timestamp}\n")
+                
+            logger.debug(f"Logged road quality data to {output_file}: lat={lat}, lon={lon}, quality={quality_score}, color={color}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error logging road quality data to CSV: {e}")
             return False
 
     def get_road_classification_from_score(self, score):
@@ -326,6 +429,15 @@ class RoadQualityAnalyzer:
         
         # Also keep segment scores for trend analysis
         self.lidar_segment_scores.append(quality_score)
+        
+        # Calculate combined quality score
+        # If we have GPS data available, log the quality score to the CSV file
+        if hasattr(self, 'sensor_fusion') and self.sensor_fusion and hasattr(self.sensor_fusion, 'gps_data'):
+            # Update the combined quality score based on LiDAR quality
+            self.combined_quality_score = self.lidar_quality_score
+            
+            # Log the quality score to the CSV file
+            self.log_data_to_csv(self.sensor_fusion.gps_data)
         
         # Conditional logging based on level
         if self.enable_profiling:
