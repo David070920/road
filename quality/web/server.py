@@ -51,6 +51,7 @@ class RoadQualityWebServer:
         self.running = False
         self.thread = None
         self.connected_clients = 0
+        self.latest_gps_data = {'lat': 0, 'lon': 0, 'altitude': None, 'satellites': None}
         
         # Add these lines to disable werkzeug request logs
         log = logging.getLogger('werkzeug')
@@ -164,6 +165,14 @@ class RoadQualityWebServer:
                 logger.debug(f"[{tstamp}] /gps_data headers: {dict(flask.request.headers)}")
                 logger.debug(f"[{tstamp}] /gps_data is_json: {flask.request.is_json}")
                 payload = flask.request.get_json(force=True)
+                # Update latest GPS data for real-time dashboard
+                self.latest_gps_data = {
+                    'lat': payload.get('latitude', payload.get('lat', 0)),
+                    'lon': payload.get('longitude', payload.get('lon', 0)),
+                    'altitude': payload.get('altitude'),
+                    'satellites': payload.get('satellites', payload.get('sats', None))
+                }
+                self.emit_data_update()
                 logger.debug(f"[{tstamp}] /gps_data parsed object: {payload}")
                 logger.debug(f"[{tstamp}] Raw GPS payload: {json.dumps(payload)}")
                 return flask.jsonify({'status': 'received'}), 200
@@ -194,13 +203,13 @@ class RoadQualityWebServer:
                         elif hasattr(self.sensor_fusion.analyzer, 'events'):
                             events = getattr(self.sensor_fusion.analyzer, 'events', [])[-10:]
                     
-                    # Get GPS data
-                    gps_data = {'lat': 0, 'lon': 0}
-                    if hasattr(self.sensor_fusion, 'gps_data'):
-                        gps_data = {
-                            'lat': self.sensor_fusion.gps_data.get('lat', 0),
-                            'lon': self.sensor_fusion.gps_data.get('lon', 0)
-                        }
+                    # Get GPS data (including altitude and satellites)
+                    gps_data = {
+                        'lat': self.latest_gps_data.get('lat', 0),
+                        'lon': self.latest_gps_data.get('lon', 0),
+                        'altitude': self.latest_gps_data.get('altitude'),
+                        'satellites': self.latest_gps_data.get('satellites')
+                    }
                     
                     data = {
                         'lidar_quality': lidar_quality,
@@ -356,13 +365,13 @@ class RoadQualityWebServer:
                     elif hasattr(self.sensor_fusion.analyzer, 'get_recent_events'):
                         events = self.sensor_fusion.analyzer.get_recent_events(count=20)
                 
-                # Get GPS data
-                gps_data = {'lat': 0, 'lon': 0}
-                if hasattr(self.sensor_fusion, 'gps_data'):
-                    gps_data = {
-                        'lat': self.sensor_fusion.gps_data.get('lat', 0),
-                        'lon': self.sensor_fusion.gps_data.get('lon', 0)
-                    }
+                # Get GPS data (including altitude and satellites)
+                gps_data = {
+                    'lat': self.latest_gps_data.get('lat', 0),
+                    'lon': self.latest_gps_data.get('lon', 0),
+                    'altitude': self.latest_gps_data.get('altitude'),
+                    'satellites': self.latest_gps_data.get('satellites')
+                }
                 
                 # Get environmental data
                 env_data = {
