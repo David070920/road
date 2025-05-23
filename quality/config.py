@@ -43,9 +43,9 @@ class Config:
     LIDAR_SCAN_MODE = 0    # Scan mode (0-2)
     
     # LiDAR angle settings for road quality analysis
-    LIDAR_MIN_ANGLE = -38 # Minimum display angle (converted from 315° to -45° for polar plot)
-    LIDAR_MAX_ANGLE = 38  # Maximum display angle
-    LIDAR_FILTER_ANGLES = [(0, 38), (322, 360)]  # Angles to keep (min, max)
+    LIDAR_MIN_ANGLE = -20 # Minimum display angle (converted from 315° to -45° for polar plot)
+    LIDAR_MAX_ANGLE = 20  # Maximum display angle
+    LIDAR_FILTER_ANGLES = [(0, 20), (340, 360)]  # Angles to keep (min, max)
     
     # GPS settings
     
