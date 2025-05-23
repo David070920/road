@@ -99,16 +99,22 @@ class RoadQualityAnalyzer:
         # Ensure the quality score is within bounds
         quality_score = max(0, min(100, quality_score))
         
-        # For scores from 0-50 (red to yellow)
-        if quality_score <= 50:
-            # Red stays at FF, green increases from 00 to FF
+        # Color thresholds
+        RED_THRESHOLD = 30
+        YELLOW_THRESHOLD = 65
+        if quality_score <= RED_THRESHOLD:
+            # Solid red
             red = 255
-            green = int((quality_score / 50) * 255)
+            green = 0
             blue = 0
-        # For scores from 50-100 (yellow to green)
+        elif quality_score <= YELLOW_THRESHOLD:
+            # Gradient from red to yellow
+            red = 255
+            green = int(((quality_score - RED_THRESHOLD) / (YELLOW_THRESHOLD - RED_THRESHOLD)) * 255)
+            blue = 0
         else:
-            # Red decreases from FF to 00, green stays at FF
-            red = int(((100 - quality_score) / 50) * 255)
+            # Gradient from yellow to green
+            red = int(((100 - quality_score) / (100 - YELLOW_THRESHOLD)) * 255)
             green = 255
             blue = 0
             

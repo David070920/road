@@ -62,7 +62,7 @@ def setup_visualization(lidar_data, lidar_data_lock, accel_data, accel_data_lock
         
         line = ax_lidar.scatter([0, 0], [0, 0], s=5, c=[0, 0], cmap=plt.cm.Greys_r, lw=0)
         
-        ax_lidar.set_rmax(1000)  # Set maximum distance to display
+        ax_lidar.set_rmax(1200)  # Set maximum distance to display
         
         # Set the angle limits to show our 90-degree field of view
         ax_lidar.set_thetamin(config.LIDAR_MIN_ANGLE)

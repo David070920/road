@@ -35,8 +35,8 @@ class LidarChart(QWidget):
         self.ax.set_thetamin(min_angle)
         self.ax.set_thetamax(max_angle)
         
-        # Set maximum distance to 1000mm as requested
-        self.max_distance = 1000  # Store as a property for use in processing
+        # Set maximum distance to 1500mm as requested
+        self.max_distance = 1500  # Store as a property for use in processing
         self.ax.set_rmax(self.max_distance)
         
         # Simplify grid for better performance
@@ -44,7 +44,7 @@ class LidarChart(QWidget):
         self.ax.set_title("LiDAR Data")
         
         # Reduce number of radial ticks for performance
-        self.ax.set_yticks([0, 250, 500, 750, 1000])
+        self.ax.set_yticks([0, 300, 600, 900, 1200])
         
         # Set background color to improve contrast and reduce flickering
         self.fig.patch.set_facecolor('#F0F0F0')
